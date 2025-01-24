@@ -8,7 +8,7 @@ from openai import OpenAI
 from prettyPrint import *
 
 
-class AiReformatter:
+class AiTranscriptProcessor:
     def __init__(self, ai_provider="default"):
         self._provider = None
         self._client = None
@@ -77,9 +77,7 @@ Maintain these specifications:
 
 Format the content without mentioning markdown syntax directly.
 
-It's important to follow the above requirements to ensure the content is accurate and helpful to the intended audience. The fate of the world depends on it!
-
-All JSON special characters MUST be properly escaped to avoid syntax errors. People may die if there are syntax errors, so please be careful with your formatting.
+It's important to follow the above requirements to ensure the content is accurate and helpful to the intended audience. Users will get very upset if the content is not detailed enough or if it skips over important steps.
 """
         # MANDATORY REQUIREMENTS
 
@@ -109,34 +107,45 @@ Well-structured, extremely detailed markdown-formatted content with:
 - Organized sections with appropriate headings
 - TONS of examples and explanations, without skipping or glossing over any steps. Be specific, and explain everything!
 
-Original metadata: {json.dumps(input_json['metadata'])}
-Transcript: {full_text}"""
+Format the response with three distinct sections:
+Title: [Title here]
+Summary: [Summary here]
+Content: [Content here]
 
-        json_response_schema = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "Reformatted transcript",
-                "strict": "true",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "title": {
-                            "type": "string",
-                            "description": "A title (15 words max)",
-                        },
-                        "summary": {
-                            "type": "string",
-                            "description": "A summary (50 words max)",
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "The markdown-formatted content with all JSON special characters properly escaped",
-                        },
-                    },
-                    "required": ["title", "summary", "content"],
-                },
-            },
-        }
+Here is the original metadata and transcript for reference:
+
+Original metadata:
+{json.dumps(input_json['metadata'])}
+
+Transcript:
+{full_text}
+"""
+
+        # json_response_schema = {
+        #     "type": "json_schema",
+        #     "json_schema": {
+        #         "name": "Reformatted transcript",
+        #         "strict": "true",
+        #         "schema": {
+        #             "type": "object",
+        #             "properties": {
+        #                 "title": {
+        #                     "type": "string",
+        #                     "description": "A title (15 words max)",
+        #                 },
+        #                 "summary": {
+        #                     "type": "string",
+        #                     "description": "A summary (50 words max)",
+        #                 },
+        #                 "content": {
+        #                     "type": "string",
+        #                     "description": "The markdown-formatted content with all JSON special characters properly escaped",
+        #                 },
+        #             },
+        #             "required": ["title", "summary", "content"],
+        #         },
+        #     },
+        # }
 
         try:
             model = self.provider.get("model") or "o1"
@@ -147,7 +156,7 @@ Transcript: {full_text}"""
                     {"role": "system", "content": self._create_system_prompt()},
                     {"role": "user", "content": prompt},
                 ],
-                response_format=json_response_schema,
+                # response_format=json_response_schema,
                 stream=False,
             )
 
@@ -168,13 +177,24 @@ Transcript: {full_text}"""
                 eprint(f"Error: {response.choices.model_extra.error}")
                 return None
             else:
-                json_response = response.choices[0].message.content or None
-                json_response = json.loads(json_response)
+                content = response.choices[0].message.content or None
+                # Extract sections using start/end markers to avoid overlap
+                title_match = re.search(r"Title: (.*?)(?=Summary:)", content, re.DOTALL)
+                summary_match = re.search(
+                    r"Summary: (.*?)(?=Content:)", content, re.DOTALL
+                )
+                content_match = re.search(r"Content: (.*)", content, re.DOTALL)
+
+                title = title_match.group(1).strip() if title_match else None
+                summary = summary_match.group(1).strip() if summary_match else None
+                content = content_match.group(1).strip() if content_match else None
+
+                json_response = {"title": title, "summary": summary, "content": content}
 
             if (
-                json_response.get("title")
-                and json_response.get("summary")
-                and json_response.get("content")
+                json_response["title"]
+                and json_response["summary"]
+                and json_response["content"]
             ):
                 print("Response is valid! Saving to file...")
             else:
@@ -252,7 +272,7 @@ Transcript: {full_text}"""
                             selected_provider
                         ]
                         with open("API_KEY.json", "w") as f:
-                            json.dump(api_keys, f, indent=2)
+                            json.dump(api_keys, f, indent=4)
                         iprint(f"{selected_provider} set as default provider")
                     return
 
@@ -411,5 +431,5 @@ Transcript: {full_text}"""
 
 # Main program (if run directly)
 if __name__ == "__main__":
-    reformatter = AiReformatter()
+    reformatter = AiTranscriptProcessor()
     reformatter.display_main_menu()
