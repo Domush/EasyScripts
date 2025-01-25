@@ -2,12 +2,18 @@
 INFO_COLOR = "\033[94m"  # Light blue
 WARNING_COLOR = "\033[93m"  # Yellow
 ERROR_COLOR = "\033[91m"  # Light red
+SUCCESS_COLOR = "\033[92m"  # Green
 END_COLOR = "\033[0m"  # Reset to default color
 
 
 def iprint(text):
     """Print text in info color"""
     print(f"{INFO_COLOR}{text}{END_COLOR}")
+
+
+def sprint(text):
+    """Print text in success/green color"""
+    print(f"{SUCCESS_COLOR}{text}{END_COLOR}")
 
 
 def wprint(text):

@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 from pyexpat import model
 import re
@@ -12,7 +13,12 @@ class AiTranscriptProcessor:
     def __init__(self, ai_provider="default"):
         self._provider = None
         self._client = None
+        self._api_key_filename = ".api-keys.json"
         self.set_provider(ai_provider)
+        # Minimum lengths for each section (anything shorter will be skipped)
+        self.min_title_length = 20
+        self.min_summary_length = 100
+        self.min_content_length = 500
 
     @property
     def provider(self):
@@ -26,7 +32,7 @@ class AiTranscriptProcessor:
 
     # Sets the provider based on provider name
     def set_provider(self, provider_name):
-        with open("API_KEY.json", "r") as f:
+        with open(self._api_key_filename, "r") as f:
             api_keys = json.load(f)
 
         provider = api_keys["ai-providers"].get(provider_name)
@@ -42,7 +48,12 @@ class AiTranscriptProcessor:
 
     def _sanitize_filename(self, title: str) -> str:
         """Sanitize the title for use as a filename"""
-        sanitized = re.sub(r"[^\w\-\s]", "", title)
+        # Replace underscores with spaces, keep consistent spacing
+        sanitized = re.sub(r"( *)_( *)", r"\1 \2", title)
+        # Replace colons with hyphens
+        sanitized = re.sub(r"( *)[:]( *)", r" - ", title)
+        # matches anything NOT word chars, hyphen or space
+        sanitized = re.sub(r"[^\w\- ]", "", title)
         return sanitized
 
     def _create_system_prompt(self) -> str:
@@ -57,8 +68,6 @@ Bullet point lists are not enough! EVERY SINGLE STEP must be HIGHLY DETAILED, as
 
 Do not assume the student knows anything about the topic. Provide detailed explanations for every step.
 
-Pretend you are writing an instruction manual for a robot to follow. The robot is very smart, but knows nothing about the topic.
-
 Format markdown to include:
 - Bold text for important facts
 - Italic text for technical terms/code
@@ -71,22 +80,15 @@ Focus on:
 - Exhaustive coverage of the original content, without skipping any topics or steps covered in the original material. The new material should be at least as detailed as the original.
 
 Maintain these specifications:
-- No patreon references
+- No Patreon references
 - Clear, detailed code examples whenever coding or commandline executions must be performed. Including code comments explaining any lines of code which may bring up questions from the reader.
 - If any section seems unclear, provide additional examples or explanation; more is better!
+- Be sure to explain why each step is being take. Don't just list the steps, explain the reasoning behind each one.
 
 Format the content without mentioning markdown syntax directly.
 
 It's important to follow the above requirements to ensure the content is accurate and helpful to the intended audience. Users will get very upset if the content is not detailed enough or if it skips over important steps.
 """
-        # MANDATORY REQUIREMENTS
-
-        # The JSON object output MUST be in this format:
-        # {
-        # "title": "The title of the transcript in 15 words or less"
-        # "summary": "The summary of the content in 50 words or less"
-        # "content": "The markdown-formatted content with all JSON special characters properly escaped",
-        # }
 
     def _combine_transcript(self, transcript: list) -> str:
         """Combine transcript segments into a single text"""
@@ -101,11 +103,11 @@ It's important to follow the above requirements to ensure the content is accurat
 A concise yet descriptive plain-text title (15 words max).
 An accurate plain-text summary which covers every topic (50 words max).
 Well-structured, extremely detailed markdown-formatted content with:
-- Proper JSON special character escaping
 - Clear formatting and grammar
 - Removal of filler phrases ('um', 'actually')
 - Organized sections with appropriate headings
 - TONS of examples and explanations, without skipping or glossing over any steps. Be specific, and explain everything!
+- If the original content is part of a larger series (part 1, part 2, etc.), ensure the new content notes that fact, and ensure the part is noted at the beginning of the title (eg: "Part1: Adding data to you RAG AI").
 
 Format the response with three distinct sections:
 Title: [Title here]
@@ -121,32 +123,6 @@ Transcript:
 {full_text}
 """
 
-        # json_response_schema = {
-        #     "type": "json_schema",
-        #     "json_schema": {
-        #         "name": "Reformatted transcript",
-        #         "strict": "true",
-        #         "schema": {
-        #             "type": "object",
-        #             "properties": {
-        #                 "title": {
-        #                     "type": "string",
-        #                     "description": "A title (15 words max)",
-        #                 },
-        #                 "summary": {
-        #                     "type": "string",
-        #                     "description": "A summary (50 words max)",
-        #                 },
-        #                 "content": {
-        #                     "type": "string",
-        #                     "description": "The markdown-formatted content with all JSON special characters properly escaped",
-        #                 },
-        #             },
-        #             "required": ["title", "summary", "content"],
-        #         },
-        #     },
-        # }
-
         try:
             model = self.provider.get("model") or "o1"
             print("Sending request to AI...")
@@ -156,7 +132,6 @@ Transcript:
                     {"role": "system", "content": self._create_system_prompt()},
                     {"role": "user", "content": prompt},
                 ],
-                # response_format=json_response_schema,
                 stream=False,
             )
 
@@ -178,28 +153,46 @@ Transcript:
                 return None
             else:
                 content = response.choices[0].message.content or None
-                # Extract sections using start/end markers to avoid overlap
-                title_match = re.search(r"Title: (.*?)(?=Summary:)", content, re.DOTALL)
-                summary_match = re.search(
-                    r"Summary: (.*?)(?=Content:)", content, re.DOTALL
-                )
-                content_match = re.search(r"Content: (.*)", content, re.DOTALL)
 
-                title = title_match.group(1).strip() if title_match else None
-                summary = summary_match.group(1).strip() if summary_match else None
-                content = content_match.group(1).strip() if content_match else None
+                # Extract each section from the response with error checking
+                try:
+                    title_parts = re.split(
+                        r"Title:", content, flags=re.IGNORECASE, maxsplit=1
+                    )
+                    if len(title_parts) < 2:
+                        raise ValueError("Title section not found")
+
+                    summary_parts = re.split(
+                        r"Summary:", title_parts[1], flags=re.IGNORECASE, maxsplit=1
+                    )
+                    if len(summary_parts) < 2:
+                        raise ValueError("Summary section not found")
+
+                    content_parts = re.split(
+                        r"Content:", summary_parts[1], flags=re.IGNORECASE, maxsplit=1
+                    )
+                    if len(content_parts) < 2:
+                        raise ValueError("Content section not found")
+
+                    title = summary_parts[0].strip("\n \t")
+                    summary = content_parts[0].strip("\n \t")
+                    content = content_parts[1].strip("\n \t")
+
+                except ValueError as e:
+                    eprint(f"Error parsing AI response: {e}")
+                    eprint(f"File processing failed")
+                    return None
 
                 json_response = {"title": title, "summary": summary, "content": content}
 
             if (
-                json_response["title"]
-                and json_response["summary"]
-                and json_response["content"]
+                len(json_response["title"]) > self.min_title_length
+                and len(json_response["summary"]) > self.min_summary_length
+                and len(json_response["content"]) > self.min_content_length
             ):
                 print("Response is valid! Saving to file...")
             else:
-                eprint(f"Error: Invalid response from AI")
-                eprint(f"File processing failed")
+                wprint(f"Skipping file: Reformatted content is too short")
                 return None
 
             # Create directory structure
@@ -216,7 +209,13 @@ Transcript:
                 json.dump(json_response, f, ensure_ascii=False, indent=4)
 
             iprint(f"File processed successfully")
-            return json_response
+            return {
+                "title": json_response["title"],
+                "summary": json_response["summary"],
+                "content": json_response["content"],
+                "filename": filename,
+                "filepath": filepath,
+            }
 
         except Exception as e:
             eprint(f"Error processing file: {e}")
@@ -224,11 +223,42 @@ Transcript:
 
     def process_file(self, input_file_path: str) -> Dict[str, str]:
         """Process a JSON file containing the transcript"""
+        # Track processed files in a JSON file
+        processed_files_path = ".processed_files.json"
+        try:
+            with open(processed_files_path, "r") as f:
+                processed_files = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            processed_files = {}
+
+        input_filename = input_file_path.split(os.sep)[-1]
+        iprint(f"Processing file: {input_filename}")
+
+        # Check if file was previously processed
+        if input_filename in processed_files:
+            output_path = processed_files[input_filename]["output_path"]
+            if os.path.exists(output_path):
+                wprint(f"File already processed. Output at: {output_path}")
+                return None
+            else:
+                wprint(f"Previous output missing. Reprocessing file.")
+
+        # Process the file
         with open(input_file_path, "r", encoding="utf-8") as f:
-            iprint(f"Processing file: {input_file_path.split(os.sep)[-1]}")
             input_json = json.load(f)
 
-        return asyncio.run(self.reformat_transcript(input_json))
+        result = asyncio.run(self.reformat_transcript(input_json))
+
+        # Update processed files tracking
+        if result:
+            processed_files[input_filename] = {
+                "output_path": result["filepath"],
+                "processed_date": str(datetime.datetime.now()),
+            }
+            with open(processed_files_path, "w") as f:
+                json.dump(processed_files, f, indent=4)
+
+        return result
 
     def process_directory(self, input_dir: str) -> None:
         """Process all JSON files in a directory"""
@@ -242,7 +272,7 @@ Transcript:
         """Display menu for AI provider selection and handle default settings"""
         while True:
             try:
-                with open("API_KEY.json", "r") as f:
+                with open(self._api_key_filename, "r") as f:
                     api_keys = json.load(f)
 
                 providers = [
@@ -271,7 +301,7 @@ Transcript:
                         api_keys["ai-providers"]["default"] = api_keys["ai-providers"][
                             selected_provider
                         ]
-                        with open("API_KEY.json", "w") as f:
+                        with open(self._api_key_filename, "w") as f:
                             json.dump(api_keys, f, indent=4)
                         iprint(f"{selected_provider} set as default provider")
                     return
@@ -288,10 +318,10 @@ Transcript:
             print(
                 f"1. Select AI Provider {f"(Current: {self.provider["name"]})" if self.provider else ""}"
             )
-            print("2. Reformat Transcrips")
+            print("2. Reformat Transcripts")
             eprint("0. Exit")
 
-            choice = int(input("\nEnter your choice (1-3): "))
+            choice = int(input("\nEnter your choice: "))
 
             if choice == 1:
                 self.select_ai_provider()
@@ -314,7 +344,7 @@ Transcript:
             print("3. Process directory of JSON files")
             eprint("0. Exit")
 
-            choice = int(input("\nEnter your choice (1-4): "))
+            choice = int(input("\nEnter your choice: "))
 
             if choice == 1:
                 break
@@ -329,7 +359,7 @@ Transcript:
                         item
                         for item in items[1:]
                         if item.endswith(".json")
-                        and not item.startswith("API_KEY")  # Ignore API_KEY.json
+                        and not item.startswith(".")  # Ignore files starting with "."
                         and not item.startswith("config")  # Ignore config.json
                         or os.path.isdir(os.path.join(current_dir, item))
                         and not item.startswith(".")  # Ignore hidden directories
