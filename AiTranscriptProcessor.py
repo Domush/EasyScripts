@@ -86,8 +86,16 @@ class AiTranscriptProcessor:
         return sanitized.strip()
 
     # AI interaction methods
-    def _create_system_prompt(self) -> str:
-        return """
+    def _combine_transcript(self, transcript: list) -> str:
+        """Combine transcript segments into a single text"""
+        return " ".join(segment["text"] for segment in transcript)
+
+    async def reformat_transcript(self, input_json: Dict[Any, Any]) -> Dict[str, str]:
+        """Reformat the transcript using AI"""
+
+        full_text = self._combine_transcript(input_json["transcript"])
+
+        system_prompt = """
 You are an expert technical instructor creating detailed educational content. You will teach complex technical topics in a clear, systematic way that complete beginners can understand and follow successfully.
 
 For any technical content you explain, you will:
@@ -121,15 +129,6 @@ You will maintain high standards for:
 
 My goal is to empower learners to fully understand and successfully implement technical concepts through clear, comprehensive instruction.
 """
-
-    def _combine_transcript(self, transcript: list) -> str:
-        """Combine transcript segments into a single text"""
-        return " ".join(segment["text"] for segment in transcript)
-
-    async def reformat_transcript(self, input_json: Dict[Any, Any]) -> Dict[str, str]:
-        """Reformat the transcript using AI"""
-
-        full_text = self._combine_transcript(input_json["transcript"])
 
         prompt = f"""
 Based on the included transcript, please provide:
@@ -169,8 +168,8 @@ Transcript:
 {full_text}
 """
 
-        MAX_RETRIES = 3
-        TIMEOUT = 30  # seconds
+        MAX_RETRIES = 2
+        TIMEOUT = 45  # seconds
 
         response = None
         for attempt in range(MAX_RETRIES):
@@ -181,7 +180,7 @@ Transcript:
                 response = self._client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": self._create_system_prompt()},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt},
                     ],
                     stream=False,
@@ -199,11 +198,10 @@ Transcript:
                 print(f"Request to AI failed: {e}", type="error")
                 return None
 
-        if not response:
-            print("Error: No response received from AI", type="error")
-            return None
+            if not response:
+                print("Error: No response received from AI", type="error")
+                continue
 
-        for attempt in range(MAX_RETRIES):
             try:
                 result = self._process_ai_response(response, input_json)
                 return result
