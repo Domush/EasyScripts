@@ -13,27 +13,32 @@
 # ==================================================================
 
 # =========================== IMPORTS =============================
+# Standard library imports
 import os
 import re
 import csv
 import json
 import hashlib
 import logging
+import datetime
+
+# Third party imports
 from tqdm import tqdm
 import isodate
-from prettyPrint import *
+from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
-from googleapiclient.discovery import build
+
+# Local imports
+from prettyPrint import *
 
 # =========================== CONFIGURATION =======================
-CONFIG_FILE = "config.json"
-API_KEY_FILE = "API_KEY.json"
+CONFIG_FILE = ".ytdConfig.json"
+API_KEY_FILE = ".yttApiKeys.json"
 DEFAULT_CONFIG = {
-    "LOGFILE_NAME": "script.log",
     "LOGFILE_PATH": ".",
     "ENABLE_LOGGING": True,
-    "TRANSCRIPT_FILENAME_LENGTH": 36,
+    "TRANSCRIPT_FILENAME_LENGTH": 50,
     "REGEX_PATTERNS": {
         "sanitize_filename": r"[^\w\-\s]",
         "youtube_video_id": r"(?:v=|\/)([0-9A-Za-z_-]{11})(?:[&?].*)?",
@@ -44,7 +49,7 @@ DEFAULT_CONFIG = {
 class YouTubeTranscriptDownloader:
     def __init__(self):
         self.config = self.load_config()
-        self.logfile_name = self.config["LOGFILE_NAME"]
+        self.logfile_name = f"ytd-{datetime.date.today().strftime('%Y-%m-%d')}.log"
         self.logfile_path = self.config["LOGFILE_PATH"]
         self.logfile = os.path.join(self.logfile_path, self.logfile_name)
         self.enable_logging = self.config["ENABLE_LOGGING"]
@@ -53,7 +58,9 @@ class YouTubeTranscriptDownloader:
         self.api_key = self.config.get("API_KEY")
 
         if not self.api_key:
-            raise ValueError("API key is missing. Please provide it in 'API_KEY.json'.")
+            raise ValueError(
+                "API key is missing. Please provide it in '.yttApiKeys.json'"
+            )
 
         # =========================== SETUP LOGGING ===========================
         log_dir = os.path.dirname(self.logfile)
@@ -100,12 +107,26 @@ class YouTubeTranscriptDownloader:
 
         return config
 
-    def sanitize_filename(self, name, max_length=None):
+    def _sanitize_filename(self, name: str, max_length=None) -> str:
+        """Sanitize a string for use as a filename."""
+        if not isinstance(name, str):
+            return str(name)
+
+        sanitized = name
+        replacements = [
+            (r"[^\u0000-\u007F\u0080-\uFFFF]", ""),  # Remove non-UTF8 chars
+            (r"( *)_( *)", r"\1 \2"),  # Replace underscore with space
+            (r"( *)[:]( *)", " - "),  # Replace colon with hyphen
+            (r" +", " "),  # Fix multiple spaces
+            (r"[^\w\- ]", ""),  # Remove invalid chars
+        ]
+
+        for pattern, replacement in replacements:
+            sanitized = re.sub(pattern, replacement, sanitized)
+
         if max_length is None:
             max_length = self.transcript_filename_length
-        pattern = self.regex_patterns.get("sanitize_filename", r"[^\w\-\s]")
-        sanitized_filename = re.sub(pattern, "", name).strip()[:max_length]
-        return sanitized_filename if sanitized_filename else "untitled"
+        return sanitized.strip()[:max_length]
 
     def sanitize_text(self, text):
         if not text:
@@ -603,18 +624,17 @@ class YouTubeTranscriptDownloader:
 
     def main_menu(self):
         while True:
+            print("Main Menu", type="info")
             print(
                 """
-Main Menu
 1. Get video transcript
 2. Get multiple transcripts from video list
 3. Fetch channel videos and save to CSV
 4. Fetch playlist videos and save to CSV
 5. Find duplicate transcripts
-6. Quit
-""",
-                type="info",
+"""
             )
+            print("6. Quit", type="error")
             choice = input("Enter your choice: ")
             if choice == "1":
                 self.fetch_single_video()
@@ -626,7 +646,7 @@ Main Menu
                 self.fetch_playlist_videos(input("Enter playlist URL: "))
             elif choice == "5":
                 self.find_duplicate_transcripts()
-            elif choice == "6":
+            elif choice == "0":
                 print("Goodbye!", type="success")
                 break
             else:

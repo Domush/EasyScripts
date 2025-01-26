@@ -1,3 +1,39 @@
+# YouTube AI Transcript Processor
+# Utility to download, analyze and enhance YouTube video transcripts into easy to read markdown using AI
+#
+# Copyright (c) 2025 Phillip Webber
+# All Rights Reserved
+#
+# Non-commercial Use Only
+#
+# This software may only be used for non-commercial purposes. Commercial use is prohibited
+# without express written permission from the copyright holder.
+#
+# Redistribution and use in source and binary forms, with or without modification,
+# for non-commercial purposes only are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 # Standard library imports
 import builtins
 from datetime import datetime
@@ -77,6 +113,10 @@ class TranscriptProcessorGUI(tk.Frame):
             "header": ("Segoe UI", 10, "bold"),  # Reduced font size for header
             "monospace": ("Consolas", 10),
         }
+
+        # Add prompt config
+        self.config_file = ".yttConfig.json"
+        self.load_prompt_config()
 
         # GUI initialization
         self.setup_gui()
@@ -185,6 +225,26 @@ class TranscriptProcessorGUI(tk.Frame):
             style="Action.TButton",
         )
         self.process_dir_btn.pack(side=tk.LEFT, padx=5)
+
+        # Add edit prompt buttons
+        self.edit_frame = ttk.Frame(self.process_frame)
+        self.edit_frame.pack(side=tk.RIGHT, padx=5)
+
+        self.edit_system_btn = ttk.Button(
+            self.edit_frame,
+            text="Edit System Prompt",
+            command=lambda: self.edit_prompt("system"),
+            style="Action.TButton",
+        )
+        self.edit_system_btn.pack(side=tk.LEFT, padx=2)
+
+        self.edit_user_btn = ttk.Button(
+            self.edit_frame,
+            text="Edit User Prompt",
+            command=lambda: self.edit_prompt("user"),
+            style="Action.TButton",
+        )
+        self.edit_user_btn.pack(side=tk.LEFT, padx=2)
 
         # Progress section with header
         progress_header = ttk.Label(
@@ -309,7 +369,7 @@ class TranscriptProcessorGUI(tk.Frame):
 
     def load_providers(self):
         try:
-            with open(".api-keys.json", "r") as f:
+            with open(".yttApiKeys.json", "r") as f:
                 api_keys = json.load(f)
                 self.providers = {
                     key: value
@@ -349,7 +409,7 @@ class TranscriptProcessorGUI(tk.Frame):
                     self.log_message(f"Provider {selected_name} not found", "error")
                     return
 
-                with open(".api-keys.json", "r+") as f:
+                with open(".yttApiKeys.json", "r+") as f:
                     api_keys = json.load(f)
                     api_keys["ai-providers"]["default"] = api_keys["ai-providers"][
                         selected_key
@@ -534,7 +594,7 @@ class TranscriptProcessorGUI(tk.Frame):
                         for file in files:
                             if self.processing_cancelled:
                                 raise InterruptedError("Processing cancelled by user")
-                            if file.endswith(".json"):
+                            if file.endswith(".json") and not file.startswith("."):
                                 file_count += 1
                                 result = self.processor.process_file(
                                     os.path.join(root, file)
@@ -555,7 +615,7 @@ class TranscriptProcessorGUI(tk.Frame):
                     for filename in os.listdir(directory):
                         if self.processing_cancelled:
                             raise InterruptedError("Processing cancelled by user")
-                        if filename.endswith(".json"):
+                        if filename.endswith(".json") and not filename.startswith("."):
                             file_count += 1
                             result = self.processor.process_file(
                                 os.path.join(directory, filename)
@@ -802,6 +862,115 @@ class TranscriptProcessorGUI(tk.Frame):
             print(f"Error during cleanup: {e}")
         finally:
             self.master.destroy()
+
+    def load_prompt_config(self):
+        """Load prompt configuration from file"""
+        try:
+            with open(self.config_file, "r") as f:
+                config = json.load(f)
+                self.system_prompt = config.get(
+                    "system_prompt", self.processor._create_system_prompt()
+                )
+                self.user_prompt = config.get(
+                    "user_prompt", self.processor._create_user_prompt()
+                )
+        except (FileNotFoundError, json.JSONDecodeError):
+            # Use defaults from processor
+            self.system_prompt = self.processor._create_system_prompt()
+            self.user_prompt = self.processor._create_user_prompt()
+            self.save_prompt_config()
+
+    def save_prompt_config(self):
+        """Save prompt configuration to file"""
+        config = {"system_prompt": self.system_prompt, "user_prompt": self.user_prompt}
+        with open(self.config_file, "w") as f:
+            json.dump(config, f, indent=4)
+
+    def edit_prompt(self, prompt_type: str):
+        """Switch log area to prompt editing mode"""
+        # Store current prompt
+        current_prompt = (
+            self.system_prompt if prompt_type == "system" else self.user_prompt
+        )
+
+        # Configure log area for editing
+        self.log_text.configure(state="normal")
+        self.log_text.delete(1.0, tk.END)
+        self.log_text.insert(tk.END, current_prompt)
+
+        # Add save/cancel buttons
+        button_frame = ttk.Frame(self.log_frame)
+        button_frame.pack(side=tk.BOTTOM, pady=5)
+
+        save_btn = ttk.Button(
+            button_frame,
+            text="Save Changes",
+            command=lambda: self.save_prompt_changes(prompt_type),
+        )
+        save_btn.pack(side=tk.LEFT, padx=5)
+
+        cancel_btn = ttk.Button(
+            button_frame, text="Cancel", command=lambda: self.cancel_prompt_edit()
+        )
+        cancel_btn.pack(side=tk.LEFT, padx=5)
+
+        # Store button frame reference for cleanup
+        self.edit_buttons = button_frame
+
+        # Disable other buttons while editing
+        self.disable_buttons()
+
+    def save_prompt_changes(self, prompt_type: str):
+        """Save prompt changes and restore log area"""
+        new_prompt = self.log_text.get(1.0, tk.END).strip()
+        if prompt_type == "system":
+            self.system_prompt = new_prompt
+        else:
+            self.user_prompt = new_prompt
+
+        self.save_prompt_config()
+        self.restore_log_area()
+        self.log_message(
+            f"{prompt_type.title()} prompt updated successfully", "success"
+        )
+
+    def cancel_prompt_edit(self):
+        """Cancel prompt editing and restore log area"""
+        self.restore_log_area()
+        self.log_message("Prompt editing cancelled", "info")
+
+    def restore_log_area(self):
+        """Restore log area to normal logging mode"""
+        # Remove edit buttons
+        if hasattr(self, "edit_buttons"):
+            self.edit_buttons.destroy()
+            delattr(self, "edit_buttons")
+
+        # Clear and disable text area
+        self.log_text.configure(state="normal")
+        self.log_text.delete(1.0, tk.END)
+        self.log_text.configure(state="disabled")
+
+        # Re-enable buttons
+        self.enable_buttons()
+
+    def disable_buttons(self):
+        """Disable buttons during prompt editing"""
+        self.process_file_btn["state"] = "disabled"
+        self.process_dir_btn["state"] = "disabled"
+        self.edit_system_btn["state"] = "disabled"
+        self.edit_user_btn["state"] = "disabled"
+        if hasattr(self, "begin_btn"):
+            self.begin_btn["state"] = "disabled"
+
+    def enable_buttons(self):
+        """Re-enable buttons after prompt editing"""
+        self.process_file_btn["state"] = "normal"
+        self.process_dir_btn["state"] = "normal"
+        self.edit_system_btn["state"] = "normal"
+        self.edit_user_btn["state"] = "normal"
+        if hasattr(self, "begin_btn"):
+            self.begin_btn["state"] = "normal"
 
 
 # Application entry point

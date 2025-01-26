@@ -1,6 +1,5 @@
 {
-    "LOGFILE_NAME": "script.log",
-    "LOGFILE_PATH": "./logs",
+    "LOGFILE_PATH": "logs",
     "ENABLE_LOGGING": true,
     "TRANSCRIPT_FILENAME_LENGTH": 100,
     "REGEX_PATTERNS": {

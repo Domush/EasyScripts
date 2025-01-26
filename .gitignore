@@ -2,6 +2,9 @@ logs
 transcripts
 processed
 .*
+!.yttApiKeys-example.json
+!.yttConfig.json
+!.ytdConfig.json
 __pycache__
 AI prompts.txt
 list.txt

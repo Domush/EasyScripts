@@ -1,3 +1,39 @@
+# YouTube AI Transcript Processor
+# Utility to download, analyze and enhance YouTube video transcripts into easy to read markdown using AI
+#
+# Copyright (c) 2025 Phillip Webber
+# All Rights Reserved
+#
+# Non-commercial Use Only
+#
+# This software may only be used for non-commercial purposes. Commercial use is prohibited
+# without express written permission from the copyright holder.
+#
+# Redistribution and use in source and binary forms, with or without modification,
+# for non-commercial purposes only are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 # Standard library imports
 from datetime import datetime
 import json, re, os
@@ -14,7 +50,7 @@ class AiTranscriptProcessor:
     def __init__(self, ai_provider="default"):
         self._provider = None
         self._client = None
-        self._api_key_filename = ".api-keys.json"
+        self._api_key_filename = ".yttApiKeys.json"
         try:
             self.set_provider(ai_provider)
         except:
@@ -24,6 +60,23 @@ class AiTranscriptProcessor:
         self.min_title_length = 20
         self.min_summary_length = 100
         self.min_content_length = 500
+        self._system_prompt = self._create_system_prompt()
+        self._user_prompt = self._create_user_prompt()
+
+    def _create_system_prompt(self) -> str:
+        """Default system prompt template"""
+        return """You are an expert technical instructor..."""  # Your existing system prompt
+
+    def _create_user_prompt(self) -> str:
+        """Default user prompt template"""
+        return """Based on the included transcript..."""  # Your existing user prompt
+
+    def set_prompts(self, system_prompt: str = None, user_prompt: str = None):
+        """Update the prompts used for AI interaction"""
+        if system_prompt is not None:
+            self._system_prompt = system_prompt
+        if user_prompt is not None:
+            self._user_prompt = user_prompt
 
     # Provider management methods
     @property
@@ -56,18 +109,7 @@ class AiTranscriptProcessor:
 
     # File processing and utility methods
     def _sanitize_filename(self, title: str) -> str:
-        """Sanitize a string for use as a filename.
-
-        Args:
-            title: The string to sanitize
-
-        Returns:
-            A sanitized string safe for use as a filename
-
-        Example:
-            >>> _sanitize_filename("Hello: World!")
-            "Hello - World"
-        """
+        """Sanitize a string for use as a filename."""
         if not isinstance(title, str):
             return str(title)
 
@@ -94,79 +136,19 @@ class AiTranscriptProcessor:
         """Reformat the transcript using AI"""
 
         full_text = self._combine_transcript(input_json["transcript"])
+        metadata = json.dumps(input_json["metadata"])
 
-        system_prompt = """
-You are an expert technical instructor creating detailed educational content. You will teach complex technical topics in a clear, systematic way that complete beginners can understand and follow successfully.
-
-For any technical content you explain, you will:
-
-1. Break it down into small, logical steps that build upon each other
-2. Include complete, well-commented code examples for every programming task
-3. Explain both HOW to perform each step and WHY it is necessary
-4. Define technical terms and concepts when first introduced
-5. Use clear language accessible to beginners
-6. Provide extensive context and background information
-7. Include troubleshooting guidance for common issues
-8. Test that all code examples work correctly
-9. Cover every relevant detail comprehensively
-10. Never skip steps or make assumptions about prior knowledge
-
-Your explanations will feature:
-- Step-by-step instructions with reasoning
-- Detailed code samples with line-by-line comments
-- Clear explanations of technical concepts
-- Examples that reinforce learning
-- Common pitfalls to avoid
-- Best practices and tips
-- Verification steps to ensure success
-
-You will maintain high standards for:
-- Technical accuracy
-- Completeness of coverage
-- Clarity of explanation
-- Practical applicability
-- Beginner accessibility
-
-My goal is to empower learners to fully understand and successfully implement technical concepts through clear, comprehensive instruction.
-"""
-
-        prompt = f"""
-Based on the included transcript, please provide:
-A title which is concise yet descriptive (plain-text) (12 words max)
-
-A summary which is accurate and covers every topic (plain-text) (50 words max).
-
-A content section whic isd well-structured, extremely detailed and contains:
-- Clear formatting and grammar
-- Removal of filler phrases ('um', 'actually')
-- Organized sections with appropriate headings
-- TONS of examples and explanations, without skipping or glossing over any steps. Be specific, and explain everything!
-- If the original content is part of a larger series (part 1, part 2, etc.), ensure the new content notes that fact, and ensure the part is noted at the beginning of the title (eg: "Part1: Adding data to you RAG AI").
-
-Content section MUST include:
-• Main concepts with explanations
-• Clear code examples with language tags
-• Bold for key points
-• Italics for technical terms
-• Tables for data/comparisons
-• Top-level heading organization
-• Bulleted lists for steps/items
-• Full step-by-step details
-• No skipped concepts
-• Series information if applicable
-
+        # Use stored prompts
+        prompt = (
+            self._user_prompt
+            + """
 Use this JSON schema:
-
 Return: {{'title': str, 'summary': str, 'content': str}}
 
 Here is the original metadata and transcript for reference:
-
-Original metadata:
-{json.dumps(input_json['metadata'])}
-
-Transcript:
-{full_text}
 """
+            + f"\n\nOriginal metadata:\n{metadata}\n\nTranscript:\n{full_text}"
+        )
 
         MAX_RETRIES = 2
         TIMEOUT = 45  # seconds
@@ -180,7 +162,7 @@ Transcript:
                 response = self._client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": system_prompt},
+                        {"role": "system", "content": self._system_prompt},
                         {"role": "user", "content": prompt},
                     ],
                     stream=False,
@@ -275,7 +257,7 @@ Transcript:
     def process_file(self, file: str) -> Dict[str, str]:
         """Process a JSON file containing the transcript"""
         # Track processed files in a JSON file
-        processed_files_path = ".processed_files.json"
+        processed_files_path = ".yttProcessedFiles.json"
         try:
             with open(processed_files_path, "r") as f:
                 processed_files = json.load(f)

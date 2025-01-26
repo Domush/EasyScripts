@@ -1,0 +1,41 @@
+{
+    "ai-providers": {
+        "claude": {
+            "name": "Claude - latest model",
+            "base_url": "https://api.anthropic.com/v1",
+            "api_key": "your api key here"
+        },
+        "deepseek": {
+            "name": "Deepseek V3",
+            "base_url": "https://api.deepseek.com/v1",
+            "model": "deepseek-chat",
+            "api_key": "your api key here"
+        },
+        "lmstudio": {
+            "name": "LM Studio",
+            "base_url": "http://localhost:1234/v1",
+            "api_key": "lm-studio"
+        },
+        "ollama": {
+            "name": "Ollama",
+            "base_url": "http://localhost:1234/v1",
+            "api_key": "ollama"
+        },
+        "google": {
+            "name": "Google Gemini",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "model": "gemini-2.0-flash-exp",
+            "api_key": "your api key here"
+        },
+        "default": {
+            "name": "Google Gemini",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "model": "gemini-2.0-flash-exp",
+            "api_key": "your api key here"
+        }
+    },
+    "youtube": {
+        "base_url": "https://www.googleapis.com/youtube/v3",
+        "api_key": "your api key here"
+    }
+}
