@@ -175,21 +175,25 @@ Transcript:
         for attempt in range(MAX_RETRIES):
             try:
                 model = self.provider.get("model") or "o1"
-                print(f"Sending request to AI (attempt {attempt + 1}/{MAX_RETRIES})...")
-                response = await asyncio.wait_for(
-                    self._client.chat.completions.create(
-                        model=model,
-                        messages=[
-                            {"role": "system", "content": self._create_system_prompt()},
-                            {"role": "user", "content": prompt},
-                        ],
-                        stream=False,
-                    ),
+                print(
+                    "Sending request to AI..."
+                    if attempt == 0
+                    else f"Sending request to AI (attempt {attempt + 1}/{MAX_RETRIES})..."
+                )
+
+                # Direct API call without trying to wrap it as a future
+                response = self._client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": self._create_system_prompt()},
+                        {"role": "user", "content": prompt},
+                    ],
+                    stream=False,
                     timeout=TIMEOUT,
                 )
                 break  # Success - exit retry loop
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if attempt == MAX_RETRIES - 1:
                     print("Request timed out after all retries", type="error")
                     return None
@@ -214,6 +218,7 @@ Transcript:
                 return None
             else:
                 reply = response.choices[0].message.content or None
+
                 # Remove all characters which aren't a { from the start of the response
                 reply = re.sub(r"^[^{]*", "", reply)
                 # Remove all characters which aren't a } from the end of the response

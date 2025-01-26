@@ -9,6 +9,7 @@ import queue
 import tkinter as tk
 from tkinter import ttk, filedialog
 from ttkthemes import ThemedTk
+from tkinter import font as tkfont
 
 # Local imports
 from AiTranscriptProcessor import AiTranscriptProcessor
@@ -47,6 +48,17 @@ class TranscriptProcessorGUI(tk.Frame):
         window_height = max(600, screen_height // 2)
         self.master.geometry(f"{window_width}x{window_height}")
 
+        # Add binding storage
+        self.bindings = {}
+
+        # Define standard fonts
+        self.fonts = {
+            "default": ("Segoe UI", 10),
+            "title": ("Segoe UI", 12, "bold"),
+            "header": ("Segoe UI", 11),
+            "monospace": ("Consolas", 10),
+        }
+
         # GUI initialization
         self.setup_gui()
 
@@ -67,30 +79,80 @@ class TranscriptProcessorGUI(tk.Frame):
     def setup_gui(self):
         """Initialize all GUI components"""
         # Configure main window
-        self.master.title("Transcript Processor")
+        self.master.title("YouTube Transcript Processor")
 
-        # Configure button styles
+        # Configure custom styles
         style = ttk.Style()
-        style.configure("Begin.TButton", background="#e8ffe8")  # Pale green
-        style.configure("Cancel.TButton", background="#ffe8e8")  # Pale red
+        fg_color = style.lookup("TLabel", "foreground") or "black"
 
-        # Create main frame
-        self.main_frame = ttk.Frame(self.master, padding="10")
+        # Configure default font and colors
+        style.configure(".", font=self.fonts["default"], foreground=fg_color)
+        style.configure("Title.TLabel", font=self.fonts["title"])
+        style.configure("Header.TLabel", font=self.fonts["header"])
+        style.configure("TCombobox", foreground=fg_color)
+        style.map(
+            "TCombobox",
+            fieldforeground=[("readonly", fg_color)],
+            selectforeground=[("readonly", fg_color)],
+        )
+
+        # Configure custom button styles
+        style.configure(
+            "Action.TButton", padding=10, font=self.fonts["default"], width=15
+        )
+        style.configure(
+            "Begin.TButton",
+            background="#e8ffe8",
+            padding=10,
+            font=self.fonts["default"],
+            width=20,
+        )
+        style.configure(
+            "Cancel.TButton",
+            background="#ffe8e8",
+            padding=10,
+            font=self.fonts["default"],
+            width=20,
+        )
+
+        # Create main frame with padding
+        self.main_frame = ttk.Frame(self.master, padding="20")
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Provider selection
-        self.provider_frame = ttk.LabelFrame(
-            self.main_frame, text="AI Provider", padding="5"
+        # Add title
+        title_label = ttk.Label(
+            self.main_frame, text="YouTube Transcript Processor", style="Title.TLabel"
         )
-        self.provider_frame.pack(fill=tk.X, pady=5)
+        title_label.pack(pady=(0, 20))
+
+        # Provider selection with improved layout
+        self.provider_frame = ttk.LabelFrame(
+            self.main_frame, text="AI Provider", padding="10"
+        )
+        self.provider_frame.pack(fill=tk.X, pady=(0, 15))
+
+        # Get current ttk style colors for consistency
+        style = ttk.Style()
+        fg_color = style.lookup("TLabel", "foreground") or "black"
+        bg_color = style.lookup("TFrame", "background") or "white"
 
         self.provider_var = tk.StringVar()
         self.provider_combo = ttk.Combobox(
             self.provider_frame,
             textvariable=self.provider_var,
-            state="readonly",  # This makes it non-editable
+            state="readonly",
+            font=self.fonts["default"],
+            foreground=fg_color,  # Match the theme's text color
         )
         self.provider_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+
+        self.set_default_btn = ttk.Button(
+            self.provider_frame,
+            text="Set as Default",
+            command=self.set_default_provider,
+            style="Action.TButton",
+        )
+        self.set_default_btn.pack(side=tk.LEFT, padx=5)
 
         # Prevent text selection when changing values
         def on_select(event):
@@ -98,21 +160,15 @@ class TranscriptProcessorGUI(tk.Frame):
 
         self.provider_combo.bind("<<ComboboxSelected>>", on_select)
 
-        self.set_default_btn = ttk.Button(
-            self.provider_frame,
-            text="Set as Default",
-            command=self.set_default_provider,
-        )
-        self.set_default_btn.pack(side=tk.LEFT, padx=5)
-
-        # Process buttons
+        # Process buttons in their own styled frame
         self.process_frame = ttk.Frame(self.main_frame)
-        self.process_frame.pack(fill=tk.X, pady=5)
+        self.process_frame.pack(fill=tk.X, pady=(0, 15))
 
         self.process_file_btn = ttk.Button(
             self.process_frame,
             text="Select File(s)",
             command=self.select_files,
+            style="Action.TButton",
         )
         self.process_file_btn.pack(side=tk.LEFT, padx=5)
 
@@ -120,48 +176,59 @@ class TranscriptProcessorGUI(tk.Frame):
             self.process_frame,
             text="Select Directory",
             command=self.select_directory,
+            style="Action.TButton",
         )
         self.process_dir_btn.pack(side=tk.LEFT, padx=5)
 
-        # Progress indication
+        # Progress section with header
+        progress_header = ttk.Label(
+            self.main_frame, text="Progress", style="Header.TLabel"
+        )
+        progress_header.pack(fill=tk.X, pady=(0, 5))
+
+        # Add progress bar
         self.progress_var = tk.StringVar(value="Ready")
         self.progress_label = ttk.Label(self.main_frame, textvariable=self.progress_var)
-        self.progress_label.pack(fill=tk.X, pady=5)
+        self.progress_label.pack(fill=tk.X, pady=(0, 5))
 
         self.progress_bar = ttk.Progressbar(self.main_frame, mode="indeterminate")
-        self.progress_bar.pack(fill=tk.X, pady=5)
+        self.progress_bar.pack(fill=tk.X, pady=(0, 5))
 
-        # Status log
-        self.log_frame = ttk.LabelFrame(self.main_frame, text="Status Log", padding="5")
-        self.log_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        # Status log with header and improved visuals
+        log_header = ttk.Label(
+            self.main_frame, text="Status Log", style="Header.TLabel"
+        )
+        log_header.pack(fill=tk.X, pady=(15, 5))
 
-        # Get current ttk style colors and font
-        style = ttk.Style()
-        fg_color = style.lookup("TLabel", "foreground") or "black"
-        bg_color = style.lookup("TFrame", "background") or "white"
-        font = style.lookup("TLabel", "font")
+        self.log_frame = ttk.Frame(self.main_frame, padding="2")
+        self.log_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Create styled log text widget
+        # Create styled log text widget with custom font and pack it
         self.log_text = tk.Text(
             self.log_frame,
             height=10,
             wrap=tk.WORD,
-            font=font,
-            foreground=fg_color,
-            background=bg_color,
+            font=self.fonts["monospace"],
             relief="flat",
-            borderwidth=0,
-            padx=5,
-            pady=5,
+            padx=10,
+            pady=10,
         )
-        self.log_text.pack(fill=tk.BOTH, expand=True)
+        self.log_text.pack(
+            side=tk.LEFT, fill=tk.BOTH, expand=True
+        )  # Make sure text widget is packed properly
 
-        # Configure tags for different message types
-        self.log_text.tag_configure("log", foreground=fg_color)
-        self.log_text.tag_configure("info", foreground="#0066CC")  # Blue
-        self.log_text.tag_configure("warning", foreground="#FF8800")  # Orange
-        self.log_text.tag_configure("error", foreground="#FF4444")  # Red
-        self.log_text.tag_configure("success", foreground="#44AA44")  # Green
+        # Get theme colors
+        fg_color = style.lookup("TLabel", "foreground") or "black"
+
+        # Configure default text color for non-tagged text
+        self.log_text.configure(foreground="black")  # Add default text color
+
+        # Configure status tags with improved colors
+        self.log_text.tag_configure("log", foreground="black")  # Add default tag color
+        self.log_text.tag_configure("info", foreground="#2E86C1")  # Softer blue
+        self.log_text.tag_configure("warning", foreground="#E67E22")  # Softer orange
+        self.log_text.tag_configure("error", foreground="#E74C3C")  # Softer red
+        self.log_text.tag_configure("success", foreground="#27AE60")  # Softer green
 
         # Add scrollbar
         log_scrollbar = ttk.Scrollbar(
@@ -184,9 +251,18 @@ class TranscriptProcessorGUI(tk.Frame):
             "Select a directory containing JSON files (Ctrl+D)\n\nIf 'Include Subdirectories' is checked, all subdirectories will be processed as well",
         )
 
-        # Add keyboard shortcuts
-        self.master.bind("<Control-o>", lambda e: self.select_files())
-        self.master.bind("<Control-d>", lambda e: self.select_directory())
+        # Add keyboard shortcuts with stored binding IDs
+        self.bind_shortcuts()
+
+    def bind_shortcuts(self):
+        """Setup keyboard shortcuts with stored binding IDs"""
+        self.bindings["file"] = self.master.bind(
+            "<Control-o>", lambda e: self.select_files()
+        )
+        self.bindings["dir"] = self.master.bind(
+            "<Control-d>", lambda e: self.select_directory()
+        )
+        self.bindings["begin"] = None  # Will be set when begin button is created
 
     def _create_tooltip(self, widget, text):
         """Create a tooltip for a given widget."""
@@ -325,29 +401,21 @@ class TranscriptProcessorGUI(tk.Frame):
         selection_text_frame = ttk.Frame(self.selection_frame)
         selection_text_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
 
-        # Get current ttk style colors and font metrics
+        # Get theme colors
         style = ttk.Style()
         fg_color = style.lookup("TLabel", "foreground") or "black"
-        bg_color = style.lookup("TFrame", "background") or "white"
-        font = style.lookup("TLabel", "font")
 
-        # Create temporary label to measure line height
-        temp_label = ttk.Label(
-            self.master, text="Ay"
-        )  # Text with both ascenders and descenders
-        line_height = temp_label.winfo_reqheight()
-        temp_label.destroy()
-
-        # Add selection text widget with scrollbar
+        # Style the selection display
         selection_text = tk.Text(
             selection_text_frame,
-            height=display_height,  # Dynamic height
+            height=display_height,
             wrap=tk.NONE,
-            state="normal",
-            font=font,
-            foreground=fg_color,
-            background=bg_color,
+            font=self.fonts["default"],
             relief="flat",
+            padx=10,
+            pady=5,
+            background="#F8F9FA",  # Light gray background
+            foreground=fg_color,  # Match the theme's text color
             borderwidth=0,
             takefocus=0,  # Prevent focus
             cursor="arrow",  # Use normal cursor instead of text cursor
@@ -362,24 +430,25 @@ class TranscriptProcessorGUI(tk.Frame):
             selection_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         selection_text.configure(yscrollcommand=selection_scrollbar.set)
 
-        # Add begin button first (always show it)
-        begin_frame = tk.Frame(
+        # Add begin button with a regular tk Frame for background color
+        begin_frame = tk.Frame(  # Change from ttk.Frame to tk.Frame
             self.selection_frame, background="#e8ffe8"
-        )  # Pale green background
-        begin_frame.pack(side=tk.RIGHT, padx=5)
+        )
+        begin_frame.pack(side=tk.RIGHT, padx=10, pady=5)
 
         self.begin_btn = ttk.Button(
             begin_frame,
             text="Begin Processing",
             command=self.begin_processing,
+            style="Begin.TButton",
         )
-        self.begin_btn.pack(
-            expand=True, padx=1, pady=1
-        )  # Small padding to show background color
+        self.begin_btn.pack(expand=True, padx=1, pady=1)
 
-        # Add tooltip for begin button
+        # Add tooltip for begin button and bind shortcut
         self._create_tooltip(self.begin_btn, "Start processing selected files (Ctrl+B)")
-        self.master.bind("<Control-b>", lambda e: self.begin_processing())
+        self.bindings["begin"] = self.master.bind(
+            "<Control-b>", lambda e: self.begin_processing()
+        )
 
         # Add content
         if self.is_directory:
@@ -398,8 +467,8 @@ class TranscriptProcessorGUI(tk.Frame):
 
         # Make text widget read-only and disable interaction
         selection_text.configure(state="disabled")
-        selection_text.bind("<Key>", lambda e: "break")  # Prevent all key input
-        selection_text.bind("<Button-1>", lambda e: "break")  # Prevent clicks
+        selection_text.bind("<Key>", lambda e: "break")
+        selection_text.bind("<Button-1>", lambda e: "break")
 
     # File processing methods
     def begin_processing(self):
@@ -539,14 +608,18 @@ class TranscriptProcessorGUI(tk.Frame):
         self.begin_btn["text"] = "Cancel Processing"
         self.begin_btn["command"] = self.cancel_processing
 
-        # Chance tooltip to cancel
+        # Update tooltip and keyboard shortcuts
         self._create_tooltip(self.begin_btn, "Cancel processing (Escape)")
-        self.master.unbind("<Control-b>", lambda e: self.begin_processing())
-        self.master.bind("<Escape>", lambda e: self.cancel_processing())
+        if self.bindings.get("begin"):
+            self.master.unbind("<Control-b>", self.bindings["begin"])
+        self.bindings["escape"] = self.master.bind(
+            "<Escape>", lambda e: self.cancel_processing()
+        )
 
-        self.begin_btn.master.configure(
-            background="#ffe8e8"
-        )  # Change frame to pale red
+        # Use configure() on the Frame, not the Button's master
+        if isinstance(self.begin_btn.master, tk.Frame):
+            self.begin_btn.master.configure(background="#ffe8e8")
+
         if hasattr(self, "include_subdirs_cb"):
             self.include_subdirs_cb["state"] = "disabled"
         self.progress_var.set("Processing... Please wait")
@@ -559,15 +632,19 @@ class TranscriptProcessorGUI(tk.Frame):
         self.begin_btn["text"] = "Begin Processing"
         self.begin_btn["command"] = self.begin_processing
 
-        # Re-Add tooltip for begin button
+        # Restore tooltip and keyboard shortcuts
         self._create_tooltip(self.begin_btn, "Start processing selected files (Ctrl+B)")
-        self.master.unbind("<Escape>", lambda e: self.cancel_processing())
-        self.master.bind("<Control-b>", lambda e: self.begin_processing())
+        if self.bindings.get("escape"):
+            self.master.unbind("<Escape>", self.bindings["escape"])
+        self.bindings["begin"] = self.master.bind(
+            "<Control-b>", lambda e: self.begin_processing()
+        )
 
         self.begin_btn["state"] = "normal"
-        self.begin_btn.master.configure(
-            background="#e8ffe8"
-        )  # Change frame back to pale green
+        # Use configure() on the Frame, not the Button's master
+        if isinstance(self.begin_btn.master, tk.Frame):
+            self.begin_btn.master.configure(background="#e8ffe8")
+
         if hasattr(self, "include_subdirs_cb"):
             self.include_subdirs_cb["state"] = "normal"
         self.progress_var.set("Ready")
@@ -626,11 +703,27 @@ class TranscriptProcessorGUI(tk.Frame):
     def on_closing(self):
         """Handle window closing event"""
         try:
+            # Cancel any ongoing processing
+            if self.processing_thread and self.processing_thread.is_alive():
+                self.processing_cancelled = True
+                self.processing_thread.join(
+                    timeout=1.0
+                )  # Wait up to 1 second for thread to finish
+
             # Restore original print function
             builtins.print = self.original_print
-        except:
-            pass
-        self.master.destroy()
+
+            # Clear the message queue
+            while not self.processing_queue.empty():
+                try:
+                    self.processing_queue.get_nowait()
+                except queue.Empty:
+                    break
+
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+        finally:
+            self.master.destroy()
 
 
 # Application entry point
