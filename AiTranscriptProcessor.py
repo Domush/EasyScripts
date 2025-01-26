@@ -65,6 +65,8 @@ class AiTranscriptProcessor:
         self.user_prompt = ""
         self.load_prompts()
 
+        print("AI Transcript Processor initialized", type="info")
+
     def load_prompts(self):
         """Load prompt configuration from file"""
         try:
@@ -158,10 +160,10 @@ class AiTranscriptProcessor:
 
         # Use stored prompts
         prompt = (
-            self._user_prompt
+            self.user_prompt
             + """
 Use this JSON schema:
-Return: {{'title': str, 'summary': str, 'content': str}}
+Return: {'title': str, 'summary': str, 'content': str}
 
 Here is the original metadata and transcript for reference:
 """
@@ -175,18 +177,19 @@ Here is the original metadata and transcript for reference:
         for attempt in range(MAX_RETRIES):
             try:
                 model = self.provider.get("model") or "o1"
-                print(f"Sending request to AI (attempt {attempt + 1}/{MAX_RETRIES})...")
+                print(
+                    f"Sending request to AI... {f"(attempt {attempt + 1}/{MAX_RETRIES})" if attempt > 0 else ""}"
+                )
 
                 response = self._client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": self._system_prompt},
+                        {"role": "system", "content": self.system_prompt},
                         {"role": "user", "content": prompt},
                     ],
                     stream=False,
                     timeout=TIMEOUT,
                 )
-                break
 
             except TimeoutError:
                 if attempt == MAX_RETRIES - 1:

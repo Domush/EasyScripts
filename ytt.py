@@ -885,27 +885,34 @@ the raw transcript into a well-formatted, easy-to-read document.""",
     def on_closing(self):
         """Handle window closing event"""
         try:
-            # Cancel any ongoing processing
+            # Cancel any ongoing processing first
+            self.processing_cancelled = True
+
+            # Wait for processing thread to finish with timeout
             if self.processing_thread and self.processing_thread.is_alive():
-                self.processing_cancelled = True
-                self.processing_thread.join(
-                    timeout=1.0
-                )  # Wait up to 1 second for thread to finish
+                try:
+                    self.processing_thread.join(timeout=2.0)  # Increased timeout
+                except Exception:
+                    pass  # Ignore thread cleanup errors
+                finally:
+                    self.processing_thread = None  # Clear thread reference
 
             # Restore original print function
             builtins.print = self._original_print
 
             # Clear the message queue
-            while not self.processing_queue.empty():
-                try:
+            try:
+                while True:
                     self.processing_queue.get_nowait()
-                except queue.Empty:
-                    break
+            except queue.Empty:
+                pass
 
         except Exception as e:
             print(f"Error during cleanup: {e}")
         finally:
-            self.master.destroy()
+            # Ensure window is destroyed even if cleanup fails
+            if self.master:
+                self.master.destroy()
 
     def edit_prompt(self, prompt_type: str):
         """Open prompt editor dialog"""
