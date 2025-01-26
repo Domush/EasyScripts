@@ -172,16 +172,12 @@ Transcript:
         MAX_RETRIES = 3
         TIMEOUT = 30  # seconds
 
+        response = None
         for attempt in range(MAX_RETRIES):
             try:
                 model = self.provider.get("model") or "o1"
-                print(
-                    "Sending request to AI..."
-                    if attempt == 0
-                    else f"Sending request to AI (attempt {attempt + 1}/{MAX_RETRIES})..."
-                )
+                print(f"Sending request to AI (attempt {attempt + 1}/{MAX_RETRIES})...")
 
-                # Direct API call without trying to wrap it as a future
                 response = self._client.chat.completions.create(
                     model=model,
                     messages=[
@@ -191,96 +187,91 @@ Transcript:
                     stream=False,
                     timeout=TIMEOUT,
                 )
-                break  # Success - exit retry loop
+                break
 
             except TimeoutError:
                 if attempt == MAX_RETRIES - 1:
                     print("Request timed out after all retries", type="error")
                     return None
-                print(f"Request timed out, retrying...", type="warning")
-                await asyncio.sleep(1)  # Wait before retry
-
+                print("Request timed out, retrying...", type="warning")
+                await asyncio.sleep(1)
             except Exception as e:
                 print(f"Request to AI failed: {e}", type="error")
                 return None
 
-        try:
-            print("Response received from AI.")
-
-            if not response:
-                print(f"Error: Empty response from AI", type="error")
-                return None
-
-            if hasattr(response.choices, "model_extra") and getattr(
-                response.choices.model_extra, "error", None
-            ):
-                print(f"Error: {response.choices.model_extra.error}", type="error")
-                return None
-            else:
-                reply = response.choices[0].message.content or None
-
-                # Remove all characters which aren't a { from the start of the response
-                reply = re.sub(r"^[^{]*", "", reply)
-                # Remove all characters which aren't a } from the end of the response
-                reply = re.sub(r"[^}]*$", "", reply)
-
-                # Extract each section from the response with error checking
-                try:
-                    # Extract json from response
-                    json_response = json.loads(reply)
-
-                    # Check if all required fields are present
-                    if not all(
-                        key in json_response for key in ["title", "summary", "content"]
-                    ):
-                        raise ValueError("Missing required fields in AI response")
-
-                    title = json_response["title"]
-                    summary = json_response["summary"]
-                    content = json_response["content"]
-
-                except ValueError as e:
-                    print(f"Error parsing AI response: {e}", type="error")
-                    print(f"File processing failed", type="error")
-                    return None
-
-            if (
-                len(title) > self.min_title_length
-                and len(summary) > self.min_summary_length
-                and len(content) > self.min_content_length
-            ):
-                print("Response is valid! Saving to file...", type="info")
-            else:
-                print(
-                    f"Skipping file: Reformatted content is too short", type="warning"
-                )
-                return None
-
-            # Create directory structure
-            channel_name = self._sanitize_filename(
-                input_json["metadata"]["channel_name"]
-            )
-            output_dir = os.path.join("processed", channel_name)
-            os.makedirs(output_dir, exist_ok=True)
-
-            # Save to file
-            filename = f"{self._sanitize_filename(title)}.json"
-            filepath = os.path.join(output_dir, filename)
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(json_response, f, ensure_ascii=False, indent=4)
-
-            print(f"File processed. Saved as: {filename}", type="success")
-            return {
-                "title": title,
-                "summary": summary,
-                "content": content,
-                "filename": filename,
-                "filepath": filepath,
-            }
-
-        except Exception as e:
-            print(f"Error processing file: {e}", type="error")
+        if not response:
+            print("Error: No response received from AI", type="error")
             return None
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                result = self._process_ai_response(response, input_json)
+                return result
+            except Exception as e:
+                if attempt == MAX_RETRIES - 1:
+                    print(
+                        f"Error processing AI response after all retries: {e}",
+                        type="error",
+                    )
+                    return None
+                print(
+                    f"Error processing AI response, retrying... (attempt {attempt + 1}/{MAX_RETRIES})",
+                    type="warning",
+                )
+                await asyncio.sleep(1)
+
+    def _process_ai_response(self, response, input_json):
+        """Process the AI response and save results"""
+        if hasattr(response.choices, "model_extra") and getattr(
+            response.choices.model_extra, "error", None
+        ):
+            raise ValueError(response.choices.model_extra.error)
+
+        reply = response.choices[0].message.content
+        if not reply:
+            raise ValueError("Empty response content")
+
+        # Clean and parse JSON response
+        reply = re.sub(r"^[^{]*", "", reply)
+        reply = re.sub(r"[^}]*$", "", reply)
+        json_response = json.loads(reply)
+
+        # Validate response fields
+        if not all(key in json_response for key in ["title", "summary", "content"]):
+            raise ValueError("Missing required fields in AI response")
+
+        title = json_response["title"]
+        summary = json_response["summary"]
+        content = json_response["content"]
+
+        # Validate content lengths
+        if not (
+            len(title) > self.min_title_length
+            and len(summary) > self.min_summary_length
+            and len(content) > self.min_content_length
+        ):
+            raise ValueError("Content too short")
+
+        # Save result
+        channel_name = self._sanitize_filename(input_json["metadata"]["channel_name"])
+        output_dir = os.path.join("processed", channel_name)
+        os.makedirs(output_dir, exist_ok=True)
+
+        filename = f"{self._sanitize_filename(title)}.json"
+        filepath = os.path.join(output_dir, filename)
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(json_response, f, ensure_ascii=False, indent=4)
+
+        print(f"File processed. Saved as: {filename}", type="success")
+
+        return {
+            "title": title,
+            "summary": summary,
+            "content": content,
+            "filename": filename,
+            "filepath": filepath,
+        }
 
     # File and directory processing methods
     def process_file(self, file: str) -> Dict[str, str]:

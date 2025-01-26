@@ -14,6 +14,24 @@ from tkinter import font as tkfont
 # Local imports
 from AiTranscriptProcessor import AiTranscriptProcessor
 
+# GUI Constants
+COLORS = {
+    "text": {
+        "default": None,  # Will be set from theme
+        "info": "#2E86C1",  # Softer blue
+        "warning": "#E67E22",  # Softer orange
+        "error": "#E74C3C",  # Softer red
+        "success": "#27AE60",  # Softer green
+    },
+    "background": {
+        "main": None,  # Will be set from theme
+        "selection": "#F8F9FA",  # Light gray
+        "begin": "#e8ffe8",  # Pale green
+        "cancel": "#ffe8e8",  # Pale red
+        "tooltip": "#ffffe0",  # Light yellow
+    },
+}
+
 
 # YouTube Transcriber GUI
 class TranscriptProcessorGUI(tk.Frame):
@@ -78,42 +96,29 @@ class TranscriptProcessorGUI(tk.Frame):
 
     def setup_gui(self):
         """Initialize all GUI components"""
+        # Get theme colors once
+        style = ttk.Style()
+        COLORS["text"]["default"] = style.lookup("TLabel", "foreground") or "black"
+        COLORS["background"]["main"] = style.lookup("TFrame", "background") or "white"
+
         # Configure main window
         self.master.title("YouTube Transcript Processor")
 
-        # Configure custom styles
-        style = ttk.Style()
-        fg_color = style.lookup("TLabel", "foreground") or "black"
-
-        # Configure default font and colors
-        style.configure(".", font=self.fonts["default"], foreground=fg_color)
+        # Configure all styles at once
+        style.configure(
+            ".", font=self.fonts["default"], foreground=COLORS["text"]["default"]
+        )
         style.configure("Title.TLabel", font=self.fonts["title"])
         style.configure("Header.TLabel", font=self.fonts["header"])
-        style.configure("TCombobox", foreground=fg_color)
+        style.configure("TCombobox", foreground=COLORS["text"]["default"])
         style.map(
             "TCombobox",
-            fieldforeground=[("readonly", fg_color)],
-            selectforeground=[("readonly", fg_color)],
+            fieldforeground=[("readonly", COLORS["text"]["default"])],
+            selectforeground=[("readonly", COLORS["text"]["default"])],
         )
-
-        # Configure custom button styles
-        style.configure(
-            "Action.TButton", padding=10, font=self.fonts["default"], width=15
-        )
-        style.configure(
-            "Begin.TButton",
-            background="#e8ffe8",
-            padding=10,
-            font=self.fonts["default"],
-            width=20,
-        )
-        style.configure(
-            "Cancel.TButton",
-            background="#ffe8e8",
-            padding=10,
-            font=self.fonts["default"],
-            width=20,
-        )
+        style.configure("Action.TButton", padding=10, width=15)
+        style.configure("Begin.TButton", padding=10, width=20)
+        style.configure("Cancel.TButton", padding=10, width=20)
 
         # Create main frame with padding
         self.main_frame = ttk.Frame(self.master, padding="20")
@@ -131,18 +136,13 @@ class TranscriptProcessorGUI(tk.Frame):
         )
         self.provider_frame.pack(fill=tk.X, pady=(0, 15))
 
-        # Get current ttk style colors for consistency
-        style = ttk.Style()
-        fg_color = style.lookup("TLabel", "foreground") or "black"
-        bg_color = style.lookup("TFrame", "background") or "white"
-
         self.provider_var = tk.StringVar()
         self.provider_combo = ttk.Combobox(
             self.provider_frame,
             textvariable=self.provider_var,
             state="readonly",
             font=self.fonts["default"],
-            foreground=fg_color,  # Match the theme's text color
+            foreground=COLORS["text"]["default"],  # Match the theme's text color
         )
         self.provider_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
 
@@ -217,18 +217,23 @@ class TranscriptProcessorGUI(tk.Frame):
             side=tk.LEFT, fill=tk.BOTH, expand=True
         )  # Make sure text widget is packed properly
 
-        # Get theme colors
-        fg_color = style.lookup("TLabel", "foreground") or "black"
-
         # Configure default text color for non-tagged text
         self.log_text.configure(foreground="black")  # Add default text color
 
         # Configure status tags with improved colors
         self.log_text.tag_configure("log", foreground="black")  # Add default tag color
-        self.log_text.tag_configure("info", foreground="#2E86C1")  # Softer blue
-        self.log_text.tag_configure("warning", foreground="#E67E22")  # Softer orange
-        self.log_text.tag_configure("error", foreground="#E74C3C")  # Softer red
-        self.log_text.tag_configure("success", foreground="#27AE60")  # Softer green
+        self.log_text.tag_configure(
+            "info", foreground=COLORS["text"]["info"]
+        )  # Softer blue
+        self.log_text.tag_configure(
+            "warning", foreground=COLORS["text"]["warning"]
+        )  # Softer orange
+        self.log_text.tag_configure(
+            "error", foreground=COLORS["text"]["error"]
+        )  # Softer red
+        self.log_text.tag_configure(
+            "success", foreground=COLORS["text"]["success"]
+        )  # Softer green
 
         # Add scrollbar
         log_scrollbar = ttk.Scrollbar(
@@ -280,7 +285,7 @@ class TranscriptProcessorGUI(tk.Frame):
                 tip,
                 text=text,
                 justify=tk.LEFT,
-                background="#ffffe0",
+                background=COLORS["background"]["tooltip"],
                 relief=tk.SOLID,
                 borderwidth=1,
                 padding="5",
@@ -401,10 +406,6 @@ class TranscriptProcessorGUI(tk.Frame):
         selection_text_frame = ttk.Frame(self.selection_frame)
         selection_text_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
 
-        # Get theme colors
-        style = ttk.Style()
-        fg_color = style.lookup("TLabel", "foreground") or "black"
-
         # Style the selection display
         selection_text = tk.Text(
             selection_text_frame,
@@ -414,8 +415,8 @@ class TranscriptProcessorGUI(tk.Frame):
             relief="flat",
             padx=10,
             pady=5,
-            background="#F8F9FA",  # Light gray background
-            foreground=fg_color,  # Match the theme's text color
+            background=COLORS["background"]["selection"],
+            foreground=COLORS["text"]["default"],
             borderwidth=0,
             takefocus=0,  # Prevent focus
             cursor="arrow",  # Use normal cursor instead of text cursor
@@ -432,7 +433,7 @@ class TranscriptProcessorGUI(tk.Frame):
 
         # Add begin button with a regular tk Frame for background color
         begin_frame = tk.Frame(  # Change from ttk.Frame to tk.Frame
-            self.selection_frame, background="#e8ffe8"
+            self.selection_frame, background=COLORS["background"]["begin"]
         )
         begin_frame.pack(side=tk.RIGHT, padx=10, pady=5)
 
@@ -618,7 +619,7 @@ class TranscriptProcessorGUI(tk.Frame):
 
         # Use configure() on the Frame, not the Button's master
         if isinstance(self.begin_btn.master, tk.Frame):
-            self.begin_btn.master.configure(background="#ffe8e8")
+            self.begin_btn.master.configure(background=COLORS["background"]["cancel"])
 
         if hasattr(self, "include_subdirs_cb"):
             self.include_subdirs_cb["state"] = "disabled"
@@ -643,7 +644,7 @@ class TranscriptProcessorGUI(tk.Frame):
         self.begin_btn["state"] = "normal"
         # Use configure() on the Frame, not the Button's master
         if isinstance(self.begin_btn.master, tk.Frame):
-            self.begin_btn.master.configure(background="#e8ffe8")
+            self.begin_btn.master.configure(background=COLORS["background"]["begin"])
 
         if hasattr(self, "include_subdirs_cb"):
             self.include_subdirs_cb["state"] = "normal"
