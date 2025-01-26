@@ -138,9 +138,6 @@ class TranscriptProcessorGUI(tk.Frame):
         self.processor = AiTranscriptProcessor()
         self.last_processed_content = ""
 
-        self.preview_frame = None
-        self.preview_text = None
-
         print("Transcript Processor ready", type="info")
 
     def setup_gui(self):
@@ -645,11 +642,6 @@ the raw transcript into a well-formatted, easy-to-read document.""",
                                 )
                                 if result:
                                     file_success_count += 1
-                                    # Update preview in main thread
-                                    self.master.after(
-                                        100,
-                                        lambda: self.update_preview(result["content"]),
-                                    )
                 else:
                     # Process only the selected directory
                     print(
@@ -666,10 +658,6 @@ the raw transcript into a well-formatted, easy-to-read document.""",
                             )
                             if result:
                                 file_success_count += 1
-                                # Update preview in main thread
-                                self.master.after(
-                                    100, lambda: self.update_preview(result["content"])
-                                )
             else:
                 # Process selected files
                 for file in self.selected_paths:
@@ -679,10 +667,6 @@ the raw transcript into a well-formatted, easy-to-read document.""",
                     result = self.processor.process_file(file)
                     if result:
                         file_success_count += 1
-                        # Update preview in main thread
-                        self.master.after(
-                            100, lambda: self.update_preview(result["content"])
-                        )
             self.processing_queue.put(
                 (
                     "success" if file_success_count > 0 else "info",
@@ -821,66 +805,6 @@ the raw transcript into a well-formatted, easy-to-read document.""",
             self.log_message(text, msg_type)
 
         builtins.print = gui_print
-
-    def create_preview_section(self):
-        """Create the preview section if it doesn't exist"""
-        if self.preview_frame is None:
-            # Add preview section
-            preview_header = ttk.Label(
-                self.main_frame, text="Preview", style="Header.TLabel"
-            )
-            preview_header.pack(fill=tk.X, pady=(15, 5))
-
-            # Create preview frame
-            self.preview_frame = ttk.Frame(self.main_frame, padding="2")
-            self.preview_frame.pack(fill=tk.BOTH, expand=True)
-
-            # Create preview text widget
-            self.preview_text = tk.Text(
-                self.preview_frame,
-                height=10,
-                wrap=tk.WORD,
-                font=self.fonts["default"],
-                relief="flat",
-                padx=10,
-                pady=10,
-                background="#FFFFFF",
-            )
-            self.preview_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-            # Add scrollbar for preview
-            preview_scrollbar = ttk.Scrollbar(
-                self.preview_frame, orient=tk.VERTICAL, command=self.preview_text.yview
-            )
-            preview_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            self.preview_text.configure(yscrollcommand=preview_scrollbar.set)
-
-            # Make preview read-only
-            self.preview_text.configure(state="disabled")
-
-    def update_preview(self, markdown_content):
-        """Update the preview window with rendered markdown"""
-        try:
-            # Create preview section if it doesn't exist
-            self.create_preview_section()
-
-            # Convert markdown to HTML
-            html = markdown2.markdown(markdown_content)
-
-            # Enable text widget for updating
-            self.preview_text.configure(state="normal")
-
-            # Clear current content
-            self.preview_text.delete(1.0, tk.END)
-
-            # Insert new content
-            self.preview_text.insert(tk.END, html)
-
-            # Make read-only again
-            self.preview_text.configure(state="disabled")
-
-        except Exception as e:
-            self.log_message(f"Error updating preview: {e}", "error")
 
     def on_closing(self):
         """Handle window closing event"""
