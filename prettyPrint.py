@@ -1,26 +1,24 @@
-# Terminal colors
-INFO_COLOR = "\033[94m"  # Light blue
-WARNING_COLOR = "\033[93m"  # Yellow
-ERROR_COLOR = "\033[91m"  # Light red
-SUCCESS_COLOR = "\033[92m"  # Green
-END_COLOR = "\033[0m"  # Reset to default color
+import builtins
+
+COLORS = {
+    "info": "\033[94m",  # Light blue
+    "warning": "\033[93m",  # Yellow
+    "error": "\033[91m",  # Light red
+    "success": "\033[92m",  # Green
+}
+END_COLOR = "\033[0m"
+
+original_print = builtins.print
 
 
-def iprint(text):
-    """Print text in info color"""
-    print(f"{INFO_COLOR}{text}{END_COLOR}")
+def print(*args, **kwargs):
+    msg_type = kwargs.pop("type", None)
+    text = " ".join(str(arg) for arg in args)
+
+    if msg_type and msg_type in COLORS:
+        text = f"{COLORS[msg_type]}{text}{END_COLOR}"
+
+    original_print(text, **kwargs)
 
 
-def sprint(text):
-    """Print text in success/green color"""
-    print(f"{SUCCESS_COLOR}{text}{END_COLOR}")
-
-
-def wprint(text):
-    """Print text in warning color"""
-    print(f"{WARNING_COLOR}{text}{END_COLOR}")
-
-
-def eprint(text):
-    """Print text in error color"""
-    print(f"{ERROR_COLOR}{text}{END_COLOR}")
+builtins.print = print

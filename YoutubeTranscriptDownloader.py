@@ -80,7 +80,10 @@ class YouTubeTranscriptDownloader:
                         {k: v for k, v in user_config.items() if v is not None}
                     )
             except Exception as e:
-                eprint(f"Error loading '{CONFIG_FILE}': {e}. Using default settings.")
+                print(
+                    f"Error loading '{CONFIG_FILE}': {e}. Using default settings.",
+                    type="error",
+                )
 
         if os.path.exists(API_KEY_FILE):
             try:
@@ -88,9 +91,12 @@ class YouTubeTranscriptDownloader:
                     api_key_data = json.load(f)
                     config["API_KEY"] = api_key_data.get("youtube").get("api_key")
             except Exception as e:
-                eprint(f"Error loading '{API_KEY_FILE}': {e}. API key not loaded.")
+                print(
+                    f"Error loading '{API_KEY_FILE}': {e}. API key not loaded.",
+                    type="error",
+                )
         else:
-            eprint(f"API key file '{API_KEY_FILE}' not found.")
+            print(f"API key file '{API_KEY_FILE}' not found.", type="error")
 
         return config
 
@@ -154,6 +160,7 @@ class YouTubeTranscriptDownloader:
             logging.warning(f"No metadata found for video ID: {video_id}")
         except Exception as e:
             logging.error(f"Error fetching metadata for video ID {video_id}: {e}")
+            print(f"An error occurred: {e}", type="error")
         return {}
 
     def fetch_single_video(self, video_url=None, metadata=None):
@@ -169,7 +176,7 @@ class YouTubeTranscriptDownloader:
         )
         match = re.search(pattern, video_url)
         if not match:
-            wprint("Invalid URL. Must contain a valid YouTube video ID.")
+            print("Invalid URL. Must contain a valid YouTube video ID.", type="warning")
             return
 
         video_id = match.group(1)
@@ -191,18 +198,20 @@ class YouTubeTranscriptDownloader:
             )
 
             if is_metadata_valid:
-                print(f"Using provided metadata for video ID {video_id}")
+                print(f"Using provided metadata for video ID {video_id}", type=None)
             else:
-                wprint(
-                    f"Incomplete or invalid metadata for video ID {video_id}. Fetching from API."
+                print(
+                    f"Incomplete or invalid metadata for video ID {video_id}. Fetching from API.",
+                    type="warning",
                 )
                 metadata = self.fetch_video_metadata(video_id)
-        else:
-            metadata = self.fetch_video_metadata(video_id)
 
         # If no metadata could be fetched, skip this video
         if not metadata:
-            wprint(f"Failed to fetch metadata for video ID {video_id}. Skipping.")
+            print(
+                f"Failed to fetch metadata for video ID {video_id}. Skipping.",
+                type="warning",
+            )
             return
 
         # Fetch transcript
@@ -217,15 +226,16 @@ class YouTubeTranscriptDownloader:
                 metadata.get("title", "Unknown"),
                 metadata.get("publish_date", "Unknown"),
             )
-            iprint(
-                f"Transcript for {metadata.get('title', 'Unknown')} saved successfully."
+            print(
+                f"Transcript for {metadata.get('title', 'Unknown')} saved successfully.",
+                type="info",
             )
         except TranscriptsDisabled:
-            wprint("Transcripts are disabled for this video.")
+            print("Transcripts are disabled for this video.", type="warning")
         except NoTranscriptFound:
-            wprint("No transcript found for this video.")
+            print("No transcript found for this video.", type="warning")
         except Exception as e:
-            eprint(f"An error occurred: {e}")
+            print(f"An error occurred: {e}", type="error")
 
     def get_channel_id_from_url(self, url):
         """Extract the channel ID from a YouTube URL or handle."""
@@ -249,7 +259,7 @@ class YouTubeTranscriptDownloader:
                 raise ValueError("Channel not found.")
         except Exception as e:
             logging.error(f"Error fetching channel ID for URL {url}: {e}")
-            eprint(f"An error occurred: {e}")
+            print(f"An error occurred: {e}", type="error")
             return None
 
     def parse_iso8601_duration(self, iso_duration):
@@ -265,7 +275,7 @@ class YouTubeTranscriptDownloader:
         """Fetch all public videos from a channel's uploads playlist with detailed metadata."""
         channel_id = self.get_channel_id_from_url(channel_url)
         if not channel_id:
-            eprint("Failed to retrieve channel ID.")
+            print("Failed to retrieve channel ID.", type="error")
             return
 
         try:
@@ -308,7 +318,7 @@ class YouTubeTranscriptDownloader:
                     if video_id:
                         video_ids.append(video_id)
                     else:
-                        wprint(f"Skipping invalid item: {item}")
+                        print(f"Skipping invalid item: {item}", type="warning")
 
                 # Fetch detailed metadata for the video IDs
                 if video_ids:
@@ -362,7 +372,7 @@ class YouTubeTranscriptDownloader:
                 )
                 writer.writerows(videos)
 
-            iprint(f"Fetched {len(videos)} videos. Saved to {output_file}.")
+            print(f"Fetched {len(videos)} videos. Saved to {output_file}.", type="info")
 
             # Ask if the user wants to fetch transcripts for the videos, defaulting to yes on enter
             fetch_transcripts = (
@@ -375,7 +385,7 @@ class YouTubeTranscriptDownloader:
 
         except Exception as e:
             logging.error(f"Error fetching channel videos: {e}")
-            eprint(f"An error occurred: {e}")
+            print(f"An error occurred: {e}", type="error")
 
     def fetch_playlist_videos(self, playlist_url):
         """Fetch all videos from a YouTube playlist."""
@@ -413,7 +423,7 @@ class YouTubeTranscriptDownloader:
                     if video_id:
                         video_ids.append(video_id)
                     else:
-                        wprint(f"Skipping invalid item: {item}")
+                        print(f"Skipping invalid item: {item}", type="warning")
 
                 # Fetch detailed metadata for the video IDs
                 if video_ids:
@@ -469,7 +479,7 @@ class YouTubeTranscriptDownloader:
                 )
                 writer.writerows(videos)
 
-            iprint(f"Fetched {len(videos)} videos. Saved to {output_file}.")
+            print(f"Fetched {len(videos)} videos. Saved to {output_file}.", type="info")
 
             # Ask if the user wants to fetch transcripts for the videos, defaulting to yes on enter
             fetch_transcripts = (
@@ -482,14 +492,14 @@ class YouTubeTranscriptDownloader:
 
         except Exception as e:
             logging.error(f"Error fetching playlist videos: {e}")
-            eprint(f"An error occurred: {e}")
+            print(f"An error occurred: {e}", type="error")
 
     def process_file_with_video_urls(self, file_path=None):
         """Process a file containing video URLs and fetch transcripts for each video."""
         if file_path is None:
             file_path = input("Enter the path to the file (Text/CSV): ").strip()
         if not os.path.exists(file_path):
-            wprint("File not found. Please try again.")
+            print("File not found. Please try again.", type="warning")
             return
 
         is_csv = file_path.endswith(".csv")
@@ -515,13 +525,13 @@ class YouTubeTranscriptDownloader:
                 self.fetch_single_video(url)
 
         except Exception as e:
-            eprint(f"An error occurred while processing the file: {e}")
+            print(f"An error occurred while processing the file: {e}", type="error")
 
     def find_duplicate_transcripts(self):
         """Find duplicate transcripts in the transcripts directory."""
         transcripts_dir = input("Enter the path to search for duplicates: ")
         if not os.path.exists(transcripts_dir):
-            wprint("Directory does not exist.")
+            print("Directory does not exist.", type="warning")
             return
 
         hashes = {}
@@ -542,9 +552,9 @@ class YouTubeTranscriptDownloader:
             with open(output_file, "w", encoding="utf-8") as f:
                 for dup, original in duplicates:
                     f.write(f"Duplicate: {dup}\nOriginal: {original}\n\n")
-            iprint(f"Saved duplicate transcripts to {output_file}.")
+            print(f"Saved duplicate transcripts to {output_file}.", type="info")
         else:
-            iprint("No duplicate transcripts found.")
+            print("No duplicate transcripts found.", type="info")
 
     def save_transcript(
         self, video_url, transcript, channel_name, video_title, publish_date
@@ -593,7 +603,7 @@ class YouTubeTranscriptDownloader:
 
     def main_menu(self):
         while True:
-            iprint(
+            print(
                 """
 Main Menu
 1. Get video transcript
@@ -602,7 +612,8 @@ Main Menu
 4. Fetch playlist videos and save to CSV
 5. Find duplicate transcripts
 6. Quit
-"""
+""",
+                type="info",
             )
             choice = input("Enter your choice: ")
             if choice == "1":
@@ -616,10 +627,10 @@ Main Menu
             elif choice == "5":
                 self.find_duplicate_transcripts()
             elif choice == "6":
-                print("Goodbye!")
+                print("Goodbye!", type="success")
                 break
             else:
-                print("Invalid choice. Please try again.")
+                print("Invalid choice. Please try again.", type="warning")
 
 
 if __name__ == "__main__":

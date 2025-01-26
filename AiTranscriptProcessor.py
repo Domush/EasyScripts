@@ -1,4 +1,5 @@
 # Standard library imports
+import builtins
 from datetime import datetime
 import json, re, os, sys
 from typing import Dict, Any, Optional
@@ -9,24 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Third-party imports
 from openai import OpenAI
-from prettyPrint import *
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from ttkthemes import ThemedTk
-
-
-# Custom stdout redirector for GUI logging
-class GuiLogRedirector:
-    def __init__(self, widget, level="info"):
-        self.widget = widget
-        self.level = level
-
-    def write(self, message):
-        if message.strip():  # Only process non-empty messages
-            self.widget.log_message(message.strip(), self.level)
-
-    def flush(self):
-        pass
 
 
 class AiTranscriptProcessor:
@@ -64,7 +50,7 @@ class AiTranscriptProcessor:
 
         provider = api_keys["ai-providers"].get(provider_name)
         if not provider:
-            eprint(f"Provider '{provider_name}' not found")
+            print(f"Provider '{provider_name}' not found", type="error")
             return None
 
         self._set_client(provider["api_key"], provider["base_url"])
@@ -79,7 +65,7 @@ class AiTranscriptProcessor:
     def _sanitize_filename(self, title: str) -> str:
         """Sanitize the title for use as a filename"""
         # Replace underscores with spaces, keep consistent spacing
-        sanitized = re.sub(r"( *)_( *)", r"\1 \2", title)
+        sanitized = re.sub(r"( *)_( *)", r"\1 \2", str(title, "ascii", "ignore"))
         # Replace colons with hyphens
         sanitized = re.sub(r"( *)[:]( *)", r" - ", title)
         # matches anything NOT word chars, hyphen or space
@@ -89,36 +75,38 @@ class AiTranscriptProcessor:
     # AI interaction methods
     def _create_system_prompt(self) -> str:
         return """
-You are an expert technical trainer and have been tasked with improving upon poorly written training material.
-You will be teaching students who know almost nothing about the topic, so you must hold their hand through every step.
-Every single step should have code examples, detailed explanations, and highlight both how and why each step is done.
+You are an expert technical instructor creating detailed educational content. You will teach complex technical topics in a clear, systematic way that complete beginners can understand and follow successfully.
 
-Create a extremely comprehensive instructional guide following these requirements:
+For any technical content you explain, you will:
 
-Bullet point lists are not enough! EVERY SINGLE STEP must be HIGHLY DETAILED, as to avoid the student making a mistake or getting confused.
+1. Break it down into small, logical steps that build upon each other
+2. Include complete, well-commented code examples for every programming task
+3. Explain both HOW to perform each step and WHY it is necessary
+4. Define technical terms and concepts when first introduced
+5. Use clear language accessible to beginners
+6. Provide extensive context and background information
+7. Include troubleshooting guidance for common issues
+8. Test that all code examples work correctly
+9. Cover every relevant detail comprehensively
+10. Never skip steps or make assumptions about prior knowledge
 
-Do not assume the student knows anything about the topic. Provide detailed explanations for every step.
+Your explanations will feature:
+- Step-by-step instructions with reasoning
+- Detailed code samples with line-by-line comments
+- Clear explanations of technical concepts
+- Examples that reinforce learning
+- Common pitfalls to avoid
+- Best practices and tips
+- Verification steps to ensure success
 
-Format markdown to include:
-- Bold text for important facts
-- Italic text for technical terms/code
-- Step-by-step instructions, assuming the reader knows nothing about any of the topics covered
-- Tables where applicable
-
-Focus on:
-- Detailed explanations of each step
+You will maintain high standards for:
 - Technical accuracy
-- Exhaustive coverage of the original content, without skipping any topics or steps covered in the original material. The new material should be at least as detailed as the original.
+- Completeness of coverage
+- Clarity of explanation
+- Practical applicability
+- Beginner accessibility
 
-Maintain these specifications:
-- No Patreon references
-- Clear, detailed code examples whenever coding or commandline executions must be performed. Including code comments explaining any lines of code which may bring up questions from the reader.
-- If any section seems unclear, provide additional examples or explanation; more is better!
-- Be sure to explain why each step is being take. Don't just list the steps, explain the reasoning behind each one.
-
-Format the content section without mentioning markdown syntax directly.
-
-It's important to follow the above requirements to ensure the content is accurate and helpful to the intended audience. Users will get very upset if the content is not detailed enough or if it skips over important steps.
+My goal is to empower learners to fully understand and successfully implement technical concepts through clear, comprehensive instruction.
 """
 
     def _combine_transcript(self, transcript: list) -> str:
@@ -130,23 +118,34 @@ It's important to follow the above requirements to ensure the content is accurat
 
         full_text = self._combine_transcript(input_json["transcript"])
 
-        prompt = f"""Based on the included transcript, please provide:
-A concise yet descriptive plain-text title (15 words max).
-An accurate plain-text summary which covers every topic (50 words max).
-Well-structured, extremely detailed markdown-formatted content with:
+        prompt = f"""
+Based on the included transcript, please provide:
+A title which is concise yet descriptive (plain-text) (12 words max)
+
+A summary which is accurate and covers every topic (plain-text) (50 words max).
+
+A content section whic isd well-structured, extremely detailed and contains:
 - Clear formatting and grammar
 - Removal of filler phrases ('um', 'actually')
 - Organized sections with appropriate headings
 - TONS of examples and explanations, without skipping or glossing over any steps. Be specific, and explain everything!
 - If the original content is part of a larger series (part 1, part 2, etc.), ensure the new content notes that fact, and ensure the part is noted at the beginning of the title (eg: "Part1: Adding data to you RAG AI").
 
-Format the response with three distinct sections:
-Title: [Title here]
-Summary: [Summary here]
-Content: [Content here]
+Content section MUST include:
+• Main concepts with explanations
+• Clear code examples with language tags
+• Bold for key points
+• Italics for technical terms
+• Tables for data/comparisons
+• Top-level heading organization
+• Bulleted lists for steps/items
+• Full step-by-step details
+• No skipped concepts
+• Series information if applicable
 
-It's vital that you begin each section with the above headings, followed by their respective content. This will help ensure the content is well-organized and easy to read.
-Only use markdown formatting in the "Content:" section. Do not include markdown in the title or summary or on the section names themselves.
+Use this JSON schema:
+
+Return: {{'title': str, 'summary': str, 'content': str}}
 
 Here is the original metadata and transcript for reference:
 
@@ -170,51 +169,57 @@ Transcript:
             )
 
         except Exception as e:
-            eprint(f"Request to AI failed: {e}")
+            print(f"Request to AI failed: {e}", type="error")
             return None
 
         try:
             print("Response received from AI.")
 
             if not response:
-                eprint(f"Error: Empty response from AI")
+                print(f"Error: Empty response from AI", type="error")
                 return None
 
             if hasattr(response.choices, "model_extra") and getattr(
                 response.choices.model_extra, "error", None
             ):
-                eprint(f"Error: {response.choices.model_extra.error}")
+                print(f"Error: {response.choices.model_extra.error}", type="error")
                 return None
             else:
-                content = response.choices[0].message.content or None
+                reply = response.choices[0].message.content or None
 
                 # Extract each section from the response with error checking
                 try:
-                    title_parts = re.split(
-                        r"Title:", content, flags=re.IGNORECASE, maxsplit=1
-                    )
-                    if len(title_parts) < 2:
-                        raise ValueError("Title section not found")
-
+                    # Extract summary section, trying to handle any AI crazy formatting scenario
                     summary_parts = re.split(
-                        r"Summary:", title_parts[1], flags=re.IGNORECASE, maxsplit=1
+                        r"[-\n #\*]*Summary:[\n# \*]*",
+                        reply,
+                        flags=re.IGNORECASE,
+                        maxsplit=1,
                     )
                     if len(summary_parts) < 2:
                         raise ValueError("Summary section not found")
 
+                    # Extract content section, trying to handle any AI crazy formatting scenario
                     content_parts = re.split(
-                        r"Content:", summary_parts[1], flags=re.IGNORECASE, maxsplit=1
+                        r"[-\n #\*]*Content:[\n# ]*",
+                        summary_parts[1],
+                        flags=re.IGNORECASE,
+                        maxsplit=1,
                     )
                     if len(content_parts) < 2:
                         raise ValueError("Content section not found")
 
-                    title = summary_parts[0].strip("\n \t")
-                    summary = content_parts[0].strip("\n \t")
+                    # Remove any markdown formatting from the title and summary (because AI never listens..)
+                    title = re.sub(r"[*_#`\n\t]", "", summary_parts[0].strip("\n \t-"))
+                    # Remove the word "Title:" if it appears at the start
+                    title = re.sub(r"^Title:? *", "", title)
+
+                    summary = re.sub(r"[*_#`]", "", content_parts[0].strip("\n \t-"))
                     content = content_parts[1].strip("\n \t")
 
                 except ValueError as e:
-                    eprint(f"Error parsing AI response: {e}")
-                    eprint(f"File processing failed")
+                    print(f"Error parsing AI response: {e}", type="error")
+                    print(f"File processing failed", type="error")
                     return None
 
                 json_response = {"title": title, "summary": summary, "content": content}
@@ -224,9 +229,11 @@ Transcript:
                 and len(json_response["summary"]) > self.min_summary_length
                 and len(json_response["content"]) > self.min_content_length
             ):
-                print("Response is valid! Saving to file...")
+                print("Response is valid! Saving to file...", type="info")
             else:
-                wprint(f"Skipping file: Reformatted content is too short")
+                print(
+                    f"Skipping file: Reformatted content is too short", type="warning"
+                )
                 return None
 
             # Create directory structure
@@ -242,7 +249,7 @@ Transcript:
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(json_response, f, ensure_ascii=False, indent=4)
 
-            iprint(f"File processed successfully")
+            print(f"File processed. Saved as: {filename}", type="success")
             return {
                 "title": json_response["title"],
                 "summary": json_response["summary"],
@@ -252,11 +259,11 @@ Transcript:
             }
 
         except Exception as e:
-            eprint(f"Error processing file: {e}")
+            print(f"Error processing file: {e}", type="error")
             return None
 
     # File and directory processing methods
-    def process_file(self, input_file_path: str) -> Dict[str, str]:
+    def process_file(self, file: str) -> Dict[str, str]:
         """Process a JSON file containing the transcript"""
         # Track processed files in a JSON file
         processed_files_path = ".processed_files.json"
@@ -267,27 +274,30 @@ Transcript:
             processed_files = {}
 
         # Get just the filename without path
-        input_filename = os.path.basename(input_file_path)
-        iprint(f"Processing file: {input_filename}")
+        filename = os.path.basename(file)
+        print(f"\nProcessing file: {filename.split(os.sep)[-1]}", type="info")
 
         # Check if file was previously processed by using just the filename
-        if input_filename in processed_files:
-            output_path = processed_files[input_filename]["output_path"]
+        if filename in processed_files:
+            output_path = processed_files[filename]["output_path"]
             if os.path.exists(output_path):
-                wprint(f"File already processed. Output at: {output_path}")
+                print(f"File already processed. Skipping.", type="warning")
                 return None
             else:
-                wprint(f"Previous output missing. Reprocessing file.")
+                print(
+                    f"File has previously been processed, but the output file is missing. Reprocessing...",
+                    type="warning",
+                )
 
         # Process the file
-        with open(input_file_path, "r", encoding="utf-8") as f:
+        with open(file, "r", encoding="utf-8") as f:
             input_json = json.load(f)
 
         result = asyncio.run(self.reformat_transcript(input_json))
 
         # Update processed files tracking using just the filename as key
         if result:
-            processed_files[input_filename] = {
+            processed_files[filename] = {
                 "output_path": result["filepath"],
                 "processed_date": str(datetime.now()),
             }
@@ -295,14 +305,6 @@ Transcript:
                 json.dump(processed_files, f, indent=4)
 
         return result
-
-    def process_directory(self, input_dir: str) -> None:
-        """Process all JSON files in a directory"""
-        wprint(f"\nProcessing directory: {input_dir.split(os.sep)[-1]}")
-        for filename in os.listdir(input_dir):
-            if filename.endswith(".json"):
-                input_file_path = os.path.join(input_dir, filename)
-                self.process_file(input_file_path)
 
 
 class TranscriptProcessorGUI(tk.Frame):
@@ -314,6 +316,9 @@ class TranscriptProcessorGUI(tk.Frame):
         self.master = master
         self.current_path = os.getcwd()
 
+        # Save original print function
+        self.original_print = builtins.print
+
         # Core components initialization
         self.processor = AiTranscriptProcessor()
         self.selected_paths = []
@@ -324,6 +329,7 @@ class TranscriptProcessorGUI(tk.Frame):
         # Processing thread components
         self.processing_queue = queue.Queue()
         self.processing_thread = None
+        self.processing_cancelled = False
 
         # Window setup and positioning
         self.master.minsize(800, 600)
@@ -345,32 +351,11 @@ class TranscriptProcessorGUI(tk.Frame):
         # Window close handler
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        # Output redirection setup
+        # Setup output redirection
         self.setup_output_redirection()
 
-    def setup_output_redirection(self):
-        """Configure stdout/stderr redirection to GUI"""
-        # Create redirectors
-        self.stdout = GuiLogRedirector(self, "info")
-        self.stderr = GuiLogRedirector(self, "error")
+        print("Transcript Processor ready", type="info")
 
-        # Redirect standard outputs
-        sys.stdout = self.stdout
-        sys.stderr = self.stderr
-
-        # Override prettyPrint functions
-        global iprint, wprint, eprint
-
-        def iprint(message):
-            self.log_message(str(message), "info")
-
-        def wprint(message):
-            self.log_message(str(message), "warning")
-
-        def eprint(message):
-            self.log_message(str(message), "error")
-
-    # GUI setup and update methods
     def setup_gui(self):
         """Initialize all GUI components"""
         # Configure main window
@@ -437,8 +422,40 @@ class TranscriptProcessorGUI(tk.Frame):
         self.log_frame = ttk.LabelFrame(self.main_frame, text="Status Log", padding="5")
         self.log_frame.pack(fill=tk.BOTH, expand=True, pady=5)
 
-        self.log_text = tk.Text(self.log_frame, height=10, wrap=tk.WORD)
+        # Get current ttk style colors and font
+        style = ttk.Style()
+        fg_color = style.lookup("TLabel", "foreground") or "black"
+        bg_color = style.lookup("TFrame", "background") or "white"
+        font = style.lookup("TLabel", "font")
+
+        # Create styled log text widget
+        self.log_text = tk.Text(
+            self.log_frame,
+            height=10,
+            wrap=tk.WORD,
+            font=font,
+            foreground=fg_color,
+            background=bg_color,
+            relief="flat",
+            borderwidth=0,
+            padx=5,
+            pady=5,
+        )
         self.log_text.pack(fill=tk.BOTH, expand=True)
+
+        # Configure tags for different message types
+        self.log_text.tag_configure("log", foreground=fg_color)
+        self.log_text.tag_configure("info", foreground="#0066CC")  # Blue
+        self.log_text.tag_configure("warning", foreground="#FF8800")  # Orange
+        self.log_text.tag_configure("error", foreground="#FF4444")  # Red
+        self.log_text.tag_configure("success", foreground="#44AA44")  # Green
+
+        # Add scrollbar
+        log_scrollbar = ttk.Scrollbar(
+            self.log_frame, orient=tk.VERTICAL, command=self.log_text.yview
+        )
+        log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.log_text.configure(yscrollcommand=log_scrollbar.set)
 
         # Initialize provider list
         self.load_providers()
@@ -621,6 +638,9 @@ class TranscriptProcessorGUI(tk.Frame):
             self.log_message("Please select an AI provider first", "warning")
             return
 
+        # Reset cancellation flag
+        self.processing_cancelled = False
+
         # Start processing in separate thread
         self.processing_thread = threading.Thread(target=self._process_files)
         self.processing_thread.daemon = True
@@ -629,6 +649,14 @@ class TranscriptProcessorGUI(tk.Frame):
         # Start progress updates
         self.start_processing()
         self.update_progress()
+
+    def cancel_processing(self):
+        """Cancel ongoing processing"""
+        self.processing_cancelled = True
+        self.log_message(
+            "Cancelling... Please wait for current operation to complete.", "warning"
+        )
+        self.begin_btn["state"] = "disabled"  # Prevent multiple cancel clicks
 
     def _process_files(self):
         """Background thread for file processing"""
@@ -641,45 +669,65 @@ class TranscriptProcessorGUI(tk.Frame):
 
             self.processor.set_provider(provider_key)
 
+            file_count = 0
+            file_success_count = 0
+
             if self.is_directory:
                 directory = self.selected_paths[0]
-                file_count = 0
-
-                def process_file(filepath):
-                    result = self.processor.process_file(filepath)
-                    if result:
-                        self.processing_queue.put(
-                            ("success", f"Processed: {result['filename']}")
-                        )
-                        return 1
-                    return 0
 
                 if self.include_subdirs_var.get():
                     # Process directory and subdirectories
+                    print(
+                        f"\nProcessing directory: {directory.split(os.sep)[-1]} and all subdirectories",
+                        type="info",
+                    )
                     for root, _, files in os.walk(directory):
                         for file in files:
+                            if self.processing_cancelled:
+                                raise InterruptedError("Processing cancelled by user")
                             if file.endswith(".json"):
-                                file_count += process_file(os.path.join(root, file))
+                                file_count += 1
+                                file_success_count += (
+                                    1
+                                    if self.processor.process_file(
+                                        os.path.join(root, file)
+                                    )
+                                    else 0
+                                )
                 else:
                     # Process only the selected directory
+                    print(
+                        f"\nProcessing directory: {directory.split(os.sep)[-1]}",
+                        type="info",
+                    )
                     for filename in os.listdir(directory):
+                        if self.processing_cancelled:
+                            raise InterruptedError("Processing cancelled by user")
                         if filename.endswith(".json"):
-                            file_count += process_file(
-                                os.path.join(directory, filename)
+                            file_count += 1
+                            file_success_count += (
+                                1
+                                if self.processor.process_file(
+                                    os.path.join(directory, filename)
+                                )
+                                else 0
                             )
-
-                self.processing_queue.put(
-                    ("info", f"Completed processing {file_count} files")
-                )
             else:
                 # Process selected files
                 for file in self.selected_paths:
-                    result = self.processor.process_file(file)
-                    if result:
-                        self.processing_queue.put(
-                            ("success", f"Processed: {result['filename']}")
-                        )
+                    if self.processing_cancelled:
+                        raise InterruptedError("Processing cancelled by user")
+                    file_count += 1
+                    file_success_count += 1 if self.processor.process_file(file) else 0
+            self.processing_queue.put(
+                (
+                    "success" if file_success_count > 0 else "info",
+                    f"\nProcessing complete. {file_success_count} of {file_count} files processed",
+                )
+            )
 
+        except InterruptedError as e:
+            self.processing_queue.put(("warning", f"\n{str(e)}"))
         except Exception as e:
             self.processing_queue.put(("error", f"Error during processing: {e}"))
         finally:
@@ -715,7 +763,8 @@ class TranscriptProcessorGUI(tk.Frame):
         self.progress_bar.start()
         self.process_file_btn["state"] = "disabled"
         self.process_dir_btn["state"] = "disabled"
-        self.begin_btn["state"] = "disabled"
+        self.begin_btn["text"] = "Cancel Processing"
+        self.begin_btn["command"] = self.cancel_processing
         if hasattr(self, "include_subdirs_cb"):
             self.include_subdirs_cb["state"] = "disabled"
         self.progress_var.set("Processing... Please wait")
@@ -725,30 +774,72 @@ class TranscriptProcessorGUI(tk.Frame):
         self.progress_bar.stop()
         self.process_file_btn["state"] = "normal"
         self.process_dir_btn["state"] = "normal"
+        self.begin_btn["text"] = "Begin Processing"
+        self.begin_btn["command"] = self.begin_processing
         self.begin_btn["state"] = "normal"
         if hasattr(self, "include_subdirs_cb"):
             self.include_subdirs_cb["state"] = "normal"
         self.progress_var.set("Ready")
 
     # Utility methods
-    def log_message(self, message: str, level: str = "info"):
+    def log_message(self, message: str, level: str = "log"):
         """Add a colored message to the log"""
-        colors = {
-            "info": "black",
-            "warning": "orange",
-            "error": "red",
-            "success": "green",
-        }
-        self.log_text.insert(tk.END, f"{message}\n", level)
-        self.log_text.tag_config(level, foreground=colors.get(level, "black"))
+        # Ensure text widget is editable
+        self.log_text.configure(state="normal")
+
+        # If message begins with a \n insert a newline first
+        if message.startswith("\n"):
+            self.log_text.insert(tk.END, "\n", "log")
+
+        # Add timestamp
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_text.insert(tk.END, f"[{timestamp}] ", "log")
+        self.log_text.insert(tk.END, f"{message.strip("\n ")}\n", level)
+
+        # Make text widget read-only again
+        self.log_text.configure(state="disabled")
+
+        # Auto-scroll to the end
         self.log_text.see(tk.END)
+
+        # Force GUI update
+        self.update_idletasks()
+
+    def setup_output_redirection(self):
+        """Configure output redirection to GUI logging"""
+
+        COLORS = {
+            "info": "\033[94m",  # Light blue
+            "warning": "\033[93m",  # Yellow
+            "error": "\033[91m",  # Light red
+            "success": "\033[92m",  # Green
+        }
+        END_COLOR = "\033[0m"
+
+        def gui_print(*args, **kwargs):
+            msg_type = kwargs.pop("type", None)
+            text = " ".join(str(arg) for arg in args)
+
+            # Print to terminal with color
+            if msg_type in COLORS:
+                colored_text = f"{COLORS[msg_type]}{text}{END_COLOR}"
+                self.original_print(colored_text, **kwargs)
+            else:
+                self.original_print(text, **kwargs)
+
+            # Log to GUI
+            self.log_message(text, msg_type)
+
+        builtins.print = gui_print
 
     def on_closing(self):
         """Handle window closing event"""
-        # Restore original stdout/stderr
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-        self.master.quit()
+        try:
+            # Restore original print function
+            builtins.print = self.original_print
+        except:
+            pass
+        self.master.destroy()
 
 
 # Application entry point
