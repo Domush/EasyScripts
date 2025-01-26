@@ -487,29 +487,28 @@ class TranscriptProcessorGUI(tk.Frame):
         # Initialize provider list
         self.load_providers()
 
-        # Add tooltips
-        self.tooltips = {
-            self.process_file_btn: "Select one or more JSON files to process (Ctrl+O)",
-            self.process_dir_btn: "Select a directory containing JSON files (Ctrl+D)",
-            self.begin_btn: "Start processing selected files (Ctrl+B)",
-        }
+        # Add tooltip for process file button
+        self._create_tooltip(
+            self.process_file_btn, "Select one or more JSON files to process (Ctrl+O)"
+        )
 
-        for widget, text in self.tooltips.items():
-            self._create_tooltip(widget, text)
+        # Add tooltip for process directory button
+        self._create_tooltip(
+            self.process_dir_btn,
+            "Select a directory containing JSON files (Ctrl+D)\n\nIf 'Include Subdirectories' is checked, all subdirectories will be processed as well",
+        )
 
         # Add keyboard shortcuts
         self.master.bind("<Control-o>", lambda e: self.select_files())
         self.master.bind("<Control-d>", lambda e: self.select_directory())
-        self.master.bind("<Control-b>", lambda e: self.begin_processing())
-        self.master.bind("<Escape>", lambda e: self.cancel_processing())
 
     def _create_tooltip(self, widget, text):
         """Create a tooltip for a given widget."""
 
         def enter(event):
             x, y, _, _ = widget.bbox("insert")
-            x += widget.winfo_rootx() + 25
-            y += widget.winfo_rooty() + 20
+            x += widget.winfo_rootx() + 45
+            y += widget.winfo_rooty() + 40
 
             tip = tk.Toplevel(widget)
             tip.wm_overrideredirect(True)
@@ -522,6 +521,7 @@ class TranscriptProcessorGUI(tk.Frame):
                 background="#ffffe0",
                 relief=tk.SOLID,
                 borderwidth=1,
+                padding="5",
             )
             label.pack()
             widget.tooltip = tip
@@ -691,6 +691,10 @@ class TranscriptProcessorGUI(tk.Frame):
             expand=True, padx=1, pady=1
         )  # Small padding to show background color
 
+        # Add tooltip for begin button
+        self._create_tooltip(self.begin_btn, "Start processing selected files (Ctrl+B)")
+        self.master.bind("<Control-b>", lambda e: self.begin_processing())
+
         # Add content
         if self.is_directory:
             directory = self.selected_paths[0]
@@ -848,6 +852,12 @@ class TranscriptProcessorGUI(tk.Frame):
         self.process_dir_btn["state"] = "disabled"
         self.begin_btn["text"] = "Cancel Processing"
         self.begin_btn["command"] = self.cancel_processing
+
+        # Chance tooltip to cancel
+        self._create_tooltip(self.begin_btn, "Cancel processing (Escape)")
+        self.master.unbind("<Control-b>", lambda e: self.begin_processing())
+        self.master.bind("<Escape>", lambda e: self.cancel_processing())
+
         self.begin_btn.master.configure(
             background="#ffe8e8"
         )  # Change frame to pale red
@@ -862,6 +872,12 @@ class TranscriptProcessorGUI(tk.Frame):
         self.process_dir_btn["state"] = "normal"
         self.begin_btn["text"] = "Begin Processing"
         self.begin_btn["command"] = self.begin_processing
+
+        # Re-Add tooltip for begin button
+        self._create_tooltip(self.begin_btn, "Start processing selected files (Ctrl+B)")
+        self.master.unbind("<Escape>", lambda e: self.cancel_processing())
+        self.master.bind("<Control-b>", lambda e: self.begin_processing())
+
         self.begin_btn["state"] = "normal"
         self.begin_btn.master.configure(
             background="#e8ffe8"
