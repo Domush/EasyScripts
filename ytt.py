@@ -165,7 +165,7 @@ class TranscriptProcessorGUI(tk.Frame):
             fieldforeground=[("readonly", COLORS["text"]["default"])],
             selectforeground=[("readonly", COLORS["text"]["default"])],
         )
-        style.configure("Action.TButton", padding=10, width=15)
+        style.configure("Action.TButton", padding=10, width=18)  # Increased from 15
         style.configure("Begin.TButton", padding=10, width=20)
         style.configure("Cancel.TButton", padding=10, width=20)
 
@@ -239,7 +239,7 @@ class TranscriptProcessorGUI(tk.Frame):
             command=lambda: self.edit_prompt("system"),
             style="Action.TButton",
         )
-        self.edit_system_btn.pack(side=tk.LEFT, padx=8)
+        self.edit_system_btn.pack(side=tk.LEFT, padx=2)
 
         self.edit_user_btn = ttk.Button(
             self.edit_frame,
@@ -248,6 +248,27 @@ class TranscriptProcessorGUI(tk.Frame):
             style="Action.TButton",
         )
         self.edit_user_btn.pack(side=tk.LEFT, padx=2)
+
+        # Add button frame for save/cancel (initially hidden)
+        self.edit_buttons = ttk.Frame(self.main_frame)
+
+        save_btn = ttk.Button(
+            self.edit_buttons,
+            text="Save Changes",
+            command=lambda: self.save_prompt_changes(None),  # Will be set later
+            style="Action.TButton",
+        )
+        save_btn.pack(side=tk.LEFT, padx=5)
+
+        cancel_btn = ttk.Button(
+            self.edit_buttons,
+            text="Cancel",
+            command=self.cancel_prompt_edit,
+            style="Action.TButton",
+        )
+        cancel_btn.pack(side=tk.LEFT, padx=5)
+
+        self.save_btn = save_btn  # Store reference for command updating
 
         # Progress section with header
         progress_header = ttk.Label(
@@ -264,10 +285,10 @@ class TranscriptProcessorGUI(tk.Frame):
         self.progress_bar.pack(fill=tk.X, pady=(0, 5))
 
         # Status log with header and improved visuals
-        log_header = ttk.Label(
+        self.log_header = ttk.Label(  # Store reference to header
             self.main_frame, text="Status Log", style="Header.TLabel"
         )
-        log_header.pack(fill=tk.X, pady=(15, 5))
+        self.log_header.pack(fill=tk.X, pady=(15, 5))
 
         self.log_frame = ttk.Frame(self.main_frame, padding="2")
         self.log_frame.pack(fill=tk.BOTH, expand=True)
@@ -287,10 +308,12 @@ class TranscriptProcessorGUI(tk.Frame):
         )  # Make sure text widget is packed properly
 
         # Configure default text color for non-tagged text
-        self.log_text.configure(foreground="black")  # Add default text color
+        self.log_text.configure(foreground="#505050")  # Medium gray instead of black
 
         # Configure status tags with improved colors
-        self.log_text.tag_configure("log", foreground="black")  # Add default tag color
+        self.log_text.tag_configure(
+            "log", foreground="#707070"
+        )  # Match default text color
         self.log_text.tag_configure(
             "info", foreground=COLORS["text"]["info"]
         )  # Softer blue
@@ -514,6 +537,9 @@ class TranscriptProcessorGUI(tk.Frame):
         )
         self.begin_btn.pack(expand=True, padx=1, pady=1)
 
+        # Check if prompts are valid
+        self.update_begin_button_state()
+
         # Add tooltip for begin button and bind shortcut
         self._create_tooltip(self.begin_btn, "Start processing selected files (Ctrl+B)")
         self.bindings["begin"] = self.master.bind(
@@ -539,6 +565,22 @@ class TranscriptProcessorGUI(tk.Frame):
         selection_text.configure(state="disabled")
         selection_text.bind("<Key>", lambda e: "break")
         selection_text.bind("<Button-1>", lambda e: "break")
+
+    def update_begin_button_state(self, enabled=True):
+        """Enable/disable begin button based on prompt validity"""
+        # Check if begin button exists before updating state, as it may be destroyed by the time this is called
+        if not hasattr(self, "begin_btn"):
+            return
+
+        prompts_valid = self.processor.system_prompt and self.processor.user_prompt
+
+        self.begin_btn["state"] = "normal" if prompts_valid and enabled else "disabled"
+        if prompts_valid:
+            self.begin_btn["tooltip"] = "Start processing selected files (Ctrl+B)"
+        else:
+            self.begin_btn["tooltip"] = (
+                "Configure system and user prompts before processing"
+            )
 
     # File processing methods
     def begin_processing(self):
@@ -868,36 +910,62 @@ class TranscriptProcessorGUI(tk.Frame):
 
     def edit_prompt(self, prompt_type: str):
         """Switch log area to prompt editing mode"""
-        # Get prompt from processor
-        if prompt_type == "system":
-            prompt_text = self.processor.system_prompt
-        else:
-            prompt_text = self.processor.user_prompt
+        # Update header text
+        header_text = (
+            "Editing System Prompt"
+            if prompt_type == "system"
+            else "Editing User Prompt"
+        )
+        self.log_header.configure(text=header_text)
+
+        # Store current log content with tags
+        self._log_contents = []
+
+        # Get all content by lines and their tags
+        for index in range(1, int(float(self.log_text.index("end")))):
+            line_start = f"{index}.0"
+            line_end = f"{index}.end"
+            line_text = self.log_text.get(line_start, line_end)
+
+            if line_text.strip():  # Skip empty lines
+                # Get all tags at the start of the line (timestamp part)
+                tags_prefix = self.log_text.tag_names(line_start)
+                # Get all tags at the middle of the line (message part)
+                tags_message = self.log_text.tag_names(f"{index}.11")  # After timestamp
+
+                self._log_contents.append(
+                    {
+                        "text": line_text + "\n",
+                        "tags": {
+                            "prefix": [
+                                t
+                                for t in tags_prefix
+                                if t in ["log", "info", "warning", "error", "success"]
+                            ],
+                            "message": [
+                                t
+                                for t in tags_message
+                                if t in ["log", "info", "warning", "error", "success"]
+                            ],
+                        },
+                    }
+                )
 
         # Configure log area for editing
         self.log_text.configure(state="normal")
-        self._log_contents = self.log_text.get(1.0, tk.END)
         self.log_text.delete(1.0, tk.END)
-        self.log_text.insert(tk.END, prompt_text)
-
-        # Add save/cancel buttons
-        button_frame = ttk.Frame(self.log_frame)
-        button_frame.pack(side=tk.BOTTOM, pady=5)
-
-        save_btn = ttk.Button(
-            button_frame,
-            text="Save Changes",
-            command=lambda: self.save_prompt_changes(prompt_type),
+        self.log_text.insert(
+            tk.END,
+            (
+                self.processor.system_prompt
+                if prompt_type == "system"
+                else self.processor.user_prompt
+            ),
         )
-        save_btn.pack(side=tk.LEFT, padx=5)
 
-        cancel_btn = ttk.Button(
-            button_frame, text="Cancel", command=lambda: self.cancel_prompt_edit()
-        )
-        cancel_btn.pack(side=tk.LEFT, padx=5)
-
-        # Store button frame reference for cleanup
-        self.edit_buttons = button_frame
+        # Show and configure save button
+        self.save_btn.configure(command=lambda: self.save_prompt_changes(prompt_type))
+        self.edit_buttons.pack(before=self.log_frame, pady=(0, 10))
 
         # Disable other buttons while editing
         self.disable_buttons()
@@ -913,6 +981,7 @@ class TranscriptProcessorGUI(tk.Frame):
         self.restore_log_area()
         if self.processor.save_prompt_config():
             self.log_message("Prompt changes saved", "success")
+            self.update_begin_button_state()  # Update button state after saving
 
     def cancel_prompt_edit(self):
         """Cancel prompt editing and restore log area"""
@@ -921,15 +990,31 @@ class TranscriptProcessorGUI(tk.Frame):
 
     def restore_log_area(self):
         """Restore log area to normal logging mode"""
-        # Remove edit buttons
-        if hasattr(self, "edit_buttons"):
-            self.edit_buttons.destroy()
-            delattr(self, "edit_buttons")
+        # Restore header text
+        self.log_header.configure(text="Status Log")
 
-        # Clear and disable text area
+        # Hide edit buttons
+        self.edit_buttons.pack_forget()
+
+        # Clear and restore text area with tags
         self.log_text.configure(state="normal")
-        self.log_text.delete(1.0, tk.END)
-        self.log_text.insert(tk.END, self._log_contents)
+        self.log_text.delete("1.0", tk.END)
+
+        # Restore content with original tags
+        for line in self._log_contents:
+            start = self.log_text.index("end-1c")
+            # Insert the text
+            self.log_text.insert("end", line["text"])
+            end = self.log_text.index("end-1c")
+
+            # Apply timestamp tags (first 11 chars)
+            if line["tags"]["prefix"]:
+                self.log_text.tag_add(line["tags"]["prefix"][0], start, f"{start}+11c")
+
+            # Apply message tags (rest of line)
+            if line["tags"]["message"]:
+                self.log_text.tag_add(line["tags"]["message"][0], f"{start}+11c", end)
+
         self.log_text.configure(state="disabled")
 
         # Re-enable buttons

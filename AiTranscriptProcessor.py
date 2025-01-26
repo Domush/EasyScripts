@@ -61,8 +61,8 @@ class AiTranscriptProcessor:
         self.min_title_length = 20
         self.min_summary_length = 100
         self.min_content_length = 500
-        self.system_prompt = None
-        self.user_prompt = None
+        self.system_prompt = ""
+        self.user_prompt = ""
         self.load_prompts()
 
     def load_prompts(self):
@@ -70,19 +70,21 @@ class AiTranscriptProcessor:
         try:
             with open(self._prompts_filename, "r") as f:
                 config = json.load(f)
-                self.system_prompt = config.get("system_prompt", None)
-                self.user_prompt = config.get("user_prompt", None)
+                self.system_prompt = config.get("system_prompt", "").strip()
+                self.user_prompt = config.get("user_prompt", "").strip()
         except (FileNotFoundError, json.JSONDecodeError):
             print(
                 "AI Prompts not configured. You must add prompts prior to processing any transcripts",
                 type="error",
             )
+            self.system_prompt = None
+            self.user_prompt = None
 
     def save_prompt_config(self):
         """Save prompt configuration to file"""
         config = {
-            "system_prompt": self.processor.system_prompt,
-            "user_prompt": self.processor.user_prompt,
+            "system_prompt": self.system_prompt.strip(),
+            "user_prompt": self.user_prompt.strip(),
         }
         try:
             with open(self._prompts_filename, "w") as f:
