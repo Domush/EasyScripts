@@ -63,18 +63,34 @@ class AiTranscriptProcessor:
 
     # File processing and utility methods
     def _sanitize_filename(self, title: str) -> str:
-        """Sanitize the title for use as a filename"""
-        # Remove non-ASCII and non-UTF-8 characters
-        sanitized = re.sub(r"[^\u0000-\u007F\u0080-\uFFFF]", "", title)
-        # Replace underscores with spaces, keep consistent spacing
-        supersanitized = re.sub(r"( *)_( *)", r"\1 \2", sanitized)
-        # Replace colons with hyphens
-        omgsanitized = re.sub(r"( *)[:]( *)", r" - ", supersanitized)
-        # Fix doublespaces
-        holyomgwtfsanitized = re.sub(r" +", " ", omgsanitized)
-        # Remove anything NOT word chars, hyphen or space
-        mindblownlevelofsanitized = re.sub(r"[^\w\- ]", "", holyomgwtfsanitized)
-        return mindblownlevelofsanitized
+        """Sanitize a string for use as a filename.
+
+        Args:
+            title: The string to sanitize
+
+        Returns:
+            A sanitized string safe for use as a filename
+
+        Example:
+            >>> _sanitize_filename("Hello: World!")
+            "Hello - World"
+        """
+        if not isinstance(title, str):
+            return str(title)
+
+        sanitized = title
+        replacements = [
+            (r"[^\u0000-\u007F\u0080-\uFFFF]", ""),  # Remove non-UTF8 chars
+            (r"( *)_( *)", r"\1 \2"),  # Replace underscore with space
+            (r"( *)[:]( *)", " - "),  # Replace colon with hyphen
+            (r" +", " "),  # Fix multiple spaces
+            (r"[^\w\- ]", ""),  # Remove invalid chars
+        ]
+
+        for pattern, replacement in replacements:
+            sanitized = re.sub(pattern, replacement, sanitized)
+
+        return sanitized.strip()
 
     # AI interaction methods
     def _create_system_prompt(self) -> str:
@@ -160,21 +176,36 @@ Transcript:
 {full_text}
 """
 
-        try:
-            model = self.provider.get("model") or "o1"
-            print("Sending request to AI...")
-            response = self._client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": self._create_system_prompt()},
-                    {"role": "user", "content": prompt},
-                ],
-                stream=False,
-            )
+        MAX_RETRIES = 3
+        TIMEOUT = 30  # seconds
 
-        except Exception as e:
-            print(f"Request to AI failed: {e}", type="error")
-            return None
+        for attempt in range(MAX_RETRIES):
+            try:
+                model = self.provider.get("model") or "o1"
+                print(f"Sending request to AI (attempt {attempt + 1}/{MAX_RETRIES})...")
+                response = await asyncio.wait_for(
+                    self._client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": self._create_system_prompt()},
+                            {"role": "user", "content": prompt},
+                        ],
+                        stream=False,
+                    ),
+                    timeout=TIMEOUT,
+                )
+                break  # Success - exit retry loop
+
+            except asyncio.TimeoutError:
+                if attempt == MAX_RETRIES - 1:
+                    print("Request timed out after all retries", type="error")
+                    return None
+                print(f"Request timed out, retrying...", type="warning")
+                await asyncio.sleep(1)  # Wait before retry
+
+            except Exception as e:
+                print(f"Request to AI failed: {e}", type="error")
+                return None
 
         try:
             print("Response received from AI.")
@@ -455,6 +486,53 @@ class TranscriptProcessorGUI(tk.Frame):
 
         # Initialize provider list
         self.load_providers()
+
+        # Add tooltips
+        self.tooltips = {
+            self.process_file_btn: "Select one or more JSON files to process (Ctrl+O)",
+            self.process_dir_btn: "Select a directory containing JSON files (Ctrl+D)",
+            self.begin_btn: "Start processing selected files (Ctrl+B)",
+        }
+
+        for widget, text in self.tooltips.items():
+            self._create_tooltip(widget, text)
+
+        # Add keyboard shortcuts
+        self.master.bind("<Control-o>", lambda e: self.select_files())
+        self.master.bind("<Control-d>", lambda e: self.select_directory())
+        self.master.bind("<Control-b>", lambda e: self.begin_processing())
+        self.master.bind("<Escape>", lambda e: self.cancel_processing())
+
+    def _create_tooltip(self, widget, text):
+        """Create a tooltip for a given widget."""
+
+        def enter(event):
+            x, y, _, _ = widget.bbox("insert")
+            x += widget.winfo_rootx() + 25
+            y += widget.winfo_rooty() + 20
+
+            tip = tk.Toplevel(widget)
+            tip.wm_overrideredirect(True)
+            tip.wm_geometry(f"+{x}+{y}")
+
+            label = ttk.Label(
+                tip,
+                text=text,
+                justify=tk.LEFT,
+                background="#ffffe0",
+                relief=tk.SOLID,
+                borderwidth=1,
+            )
+            label.pack()
+            widget.tooltip = tip
+
+        def leave(event):
+            if hasattr(widget, "tooltip"):
+                widget.tooltip.destroy()
+                del widget.tooltip
+
+        widget.bind("<Enter>", enter)
+        widget.bind("<Leave>", leave)
 
     def load_providers(self):
         try:
