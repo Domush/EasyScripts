@@ -249,27 +249,6 @@ class TranscriptProcessorGUI(tk.Frame):
         )
         self.edit_user_btn.pack(side=tk.LEFT, padx=2)
 
-        # Add button frame for save/cancel (initially hidden)
-        self.edit_buttons = ttk.Frame(self.main_frame)
-
-        save_btn = ttk.Button(
-            self.edit_buttons,
-            text="Save Changes",
-            command=lambda: self.save_prompt_changes(None),  # Will be set later
-            style="Action.TButton",
-        )
-        save_btn.pack(side=tk.LEFT, padx=5)
-
-        cancel_btn = ttk.Button(
-            self.edit_buttons,
-            text="Cancel",
-            command=self.cancel_prompt_edit,
-            style="Action.TButton",
-        )
-        cancel_btn.pack(side=tk.LEFT, padx=5)
-
-        self.save_btn = save_btn  # Store reference for command updating
-
         # Progress section with header
         progress_header = ttk.Label(
             self.main_frame, text="Progress", style="Header.TLabel"
@@ -909,119 +888,27 @@ class TranscriptProcessorGUI(tk.Frame):
             self.master.destroy()
 
     def edit_prompt(self, prompt_type: str):
-        """Switch log area to prompt editing mode"""
-        # Update header text
-        header_text = (
-            "Editing System Prompt"
+        """Open prompt editor dialog"""
+        current_prompt = (
+            self.processor.system_prompt
             if prompt_type == "system"
-            else "Editing User Prompt"
+            else self.processor.user_prompt
         )
-        self.log_header.configure(text=header_text)
+        PromptEditor(self.master, prompt_type, current_prompt, self.save_prompt_changes)
 
-        # Store current log content with tags
-        self._log_contents = []
-
-        # Get all content by lines and their tags
-        for index in range(1, int(float(self.log_text.index("end")))):
-            line_start = f"{index}.0"
-            line_end = f"{index}.end"
-            line_text = self.log_text.get(line_start, line_end)
-
-            if line_text.strip():  # Skip empty lines
-                # Get all tags at the start of the line (timestamp part)
-                tags_prefix = self.log_text.tag_names(line_start)
-                # Get all tags at the middle of the line (message part)
-                tags_message = self.log_text.tag_names(f"{index}.11")  # After timestamp
-
-                self._log_contents.append(
-                    {
-                        "text": line_text + "\n",
-                        "tags": {
-                            "prefix": [
-                                t
-                                for t in tags_prefix
-                                if t in ["log", "info", "warning", "error", "success"]
-                            ],
-                            "message": [
-                                t
-                                for t in tags_message
-                                if t in ["log", "info", "warning", "error", "success"]
-                            ],
-                        },
-                    }
-                )
-
-        # Configure log area for editing
-        self.log_text.configure(state="normal")
-        self.log_text.delete(1.0, tk.END)
-        self.log_text.insert(
-            tk.END,
-            (
-                self.processor.system_prompt
-                if prompt_type == "system"
-                else self.processor.user_prompt
-            ),
-        )
-
-        # Show and configure save button
-        self.save_btn.configure(command=lambda: self.save_prompt_changes(prompt_type))
-        self.edit_buttons.pack(before=self.log_frame, pady=(0, 10))
-
-        # Disable other buttons while editing
-        self.disable_buttons()
-
-    def save_prompt_changes(self, prompt_type: str):
-        """Save prompt changes and restore log area"""
-        new_prompt = self.log_text.get(1.0, tk.END).strip()
+    def save_prompt_changes(self, prompt_type: str, new_prompt: str):
+        """Save prompt changes"""
         if prompt_type == "system":
             self.processor.system_prompt = new_prompt
         else:
             self.processor.user_prompt = new_prompt
 
-        self.restore_log_area()
         if self.processor.save_prompt_config():
             self.log_message("Prompt changes saved", "success")
-            self.update_begin_button_state()  # Update button state after saving
-
-    def cancel_prompt_edit(self):
-        """Cancel prompt editing and restore log area"""
-        self.restore_log_area()
-        self.log_message("Prompt editing cancelled", "info")
-
-    def restore_log_area(self):
-        """Restore log area to normal logging mode"""
-        # Restore header text
-        self.log_header.configure(text="Status Log")
-
-        # Hide edit buttons
-        self.edit_buttons.pack_forget()
-
-        # Clear and restore text area with tags
-        self.log_text.configure(state="normal")
-        self.log_text.delete("1.0", tk.END)
-
-        # Restore content with original tags
-        for line in self._log_contents:
-            start = self.log_text.index("end-1c")
-            # Insert the text
-            self.log_text.insert("end", line["text"])
-            end = self.log_text.index("end-1c")
-
-            # Apply timestamp tags (first 11 chars)
-            if line["tags"]["prefix"]:
-                self.log_text.tag_add(line["tags"]["prefix"][0], start, f"{start}+11c")
-
-            # Apply message tags (rest of line)
-            if line["tags"]["message"]:
-                self.log_text.tag_add(line["tags"]["message"][0], f"{start}+11c", end)
-
-        self.log_text.configure(state="disabled")
-
-        # Re-enable buttons
-        self.enable_buttons()
+            self.update_begin_button_state()
 
     def disable_buttons(self):
-        """Disable buttons during prompt editing"""
+        """Disable buttons during editing"""
         self.process_file_btn["state"] = "disabled"
         self.process_dir_btn["state"] = "disabled"
         self.edit_system_btn["state"] = "disabled"
@@ -1030,13 +917,85 @@ class TranscriptProcessorGUI(tk.Frame):
             self.begin_btn["state"] = "disabled"
 
     def enable_buttons(self):
-        """Re-enable buttons after prompt editing"""
+        """Re-enable buttons after editing"""
         self.process_file_btn["state"] = "normal"
         self.process_dir_btn["state"] = "normal"
         self.edit_system_btn["state"] = "normal"
         self.edit_user_btn["state"] = "normal"
         if hasattr(self, "begin_btn"):
             self.begin_btn["state"] = "normal"
+
+
+class PromptEditor(tk.Toplevel):
+    """Dialog for editing system and user prompts"""
+
+    def __init__(self, parent, prompt_type, current_prompt, save_callback):
+        super().__init__(parent)
+        self.title(f"Edit {prompt_type.title()} Prompt")
+        self.prompt_type = prompt_type
+        self.save_callback = save_callback
+
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+
+        # Set size and position
+        width = 800
+        height = 600
+        x = parent.winfo_rootx() + (parent.winfo_width() - width) // 2
+        y = parent.winfo_rooty() + (parent.winfo_height() - height) // 2
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+        # Create and pack widgets
+        self.setup_widgets(current_prompt)
+
+        # Handle window close button
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+
+        # Focus the window
+        self.focus_set()
+
+    def setup_widgets(self, current_prompt):
+        # Create main frame with padding
+        main_frame = ttk.Frame(self, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Add text editor
+        self.editor = tk.Text(
+            main_frame, wrap=tk.WORD, font=("Consolas", 10), padx=5, pady=5
+        )
+        self.editor.pack(fill=tk.BOTH, expand=True)
+
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(main_frame, command=self.editor.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.editor.configure(yscrollcommand=scrollbar.set)
+
+        # Insert current prompt
+        if current_prompt:
+            self.editor.insert("1.0", current_prompt)
+
+        # Add buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+
+        save_btn = ttk.Button(
+            button_frame, text="Save Changes", command=self.save, style="Action.TButton"
+        )
+        save_btn.pack(side=tk.RIGHT, padx=5)
+
+        cancel_btn = ttk.Button(
+            button_frame, text="Cancel", command=self.cancel, style="Action.TButton"
+        )
+        cancel_btn.pack(side=tk.RIGHT, padx=5)
+
+    def save(self):
+        new_prompt = self.editor.get("1.0", tk.END).strip()
+        self.save_callback(self.prompt_type, new_prompt)
+        self.destroy()
+
+    def cancel(self):
+        self.destroy()
 
 
 # Application entry point
