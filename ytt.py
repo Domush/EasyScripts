@@ -241,6 +241,14 @@ class TranscriptProcessorGUI(tk.Frame):
         )
         self.edit_system_btn.pack(side=tk.LEFT, padx=2)
 
+        self._create_tooltip(
+            self.edit_system_btn,
+            """Edit the system prompt that defines the AI's role and behavioral constraints
+
+The system prompt establishes how the AI should approach the transcript,
+what style and tone to use, and any specific formatting requirements.""",
+        )
+
         self.edit_user_btn = ttk.Button(
             self.edit_frame,
             text="Edit User Prompt",
@@ -248,6 +256,14 @@ class TranscriptProcessorGUI(tk.Frame):
             style="Action.TButton",
         )
         self.edit_user_btn.pack(side=tk.LEFT, padx=2)
+
+        self._create_tooltip(
+            self.edit_user_btn,
+            """Edit the user prompt that specifies how to process each transcript
+
+The user prompt defines the specific instructions for transforming
+the raw transcript into a well-formatted, easy-to-read document.""",
+        )
 
         # Progress section with header
         progress_header = ttk.Label(
@@ -547,18 +563,22 @@ class TranscriptProcessorGUI(tk.Frame):
 
     def update_begin_button_state(self, enabled=True):
         """Enable/disable begin button based on prompt validity"""
-        # Check if begin button exists before updating state, as it may be destroyed by the time this is called
+        # Check if begin button exists before updating state
         if not hasattr(self, "begin_btn"):
             return
 
         prompts_valid = self.processor.system_prompt and self.processor.user_prompt
 
         self.begin_btn["state"] = "normal" if prompts_valid and enabled else "disabled"
+
+        # Update tooltip using _create_tooltip method
         if prompts_valid:
-            self.begin_btn["tooltip"] = "Start processing selected files (Ctrl+B)"
+            self._create_tooltip(
+                self.begin_btn, "Start processing selected files (Ctrl+B)"
+            )
         else:
-            self.begin_btn["tooltip"] = (
-                "Configure system and user prompts before processing"
+            self._create_tooltip(
+                self.begin_btn, "Configure system and user prompts before processing"
             )
 
     # File processing methods
