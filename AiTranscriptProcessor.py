@@ -64,13 +64,17 @@ class AiTranscriptProcessor:
     # File processing and utility methods
     def _sanitize_filename(self, title: str) -> str:
         """Sanitize the title for use as a filename"""
+        # Remove non-ASCII and non-UTF-8 characters
+        sanitized = re.sub(r"[^\u0000-\u007F\u0080-\uFFFF]", "", title)
         # Replace underscores with spaces, keep consistent spacing
-        sanitized = re.sub(r"( *)_( *)", r"\1 \2", str(title, "ascii", "ignore"))
+        supersanitized = re.sub(r"( *)_( *)", r"\1 \2", sanitized)
         # Replace colons with hyphens
-        sanitized = re.sub(r"( *)[:]( *)", r" - ", title)
-        # matches anything NOT word chars, hyphen or space
-        sanitized = re.sub(r"[^\w\- ]", "", title)
-        return sanitized
+        omgsanitized = re.sub(r"( *)[:]( *)", r" - ", supersanitized)
+        # Fix doublespaces
+        holyomgwtfsanitized = re.sub(r" +", " ", omgsanitized)
+        # Remove anything NOT word chars, hyphen or space
+        mindblownlevelofsanitized = re.sub(r"[^\w\- ]", "", holyomgwtfsanitized)
+        return mindblownlevelofsanitized
 
     # AI interaction methods
     def _create_system_prompt(self) -> str:
@@ -186,48 +190,35 @@ Transcript:
                 return None
             else:
                 reply = response.choices[0].message.content or None
+                # Remove all characters which aren't a { from the start of the response
+                reply = re.sub(r"^[^{]*", "", reply)
+                # Remove all characters which aren't a } from the end of the response
+                reply = re.sub(r"[^}]*$", "", reply)
 
                 # Extract each section from the response with error checking
                 try:
-                    # Extract summary section, trying to handle any AI crazy formatting scenario
-                    summary_parts = re.split(
-                        r"[-\n #\*]*Summary:[\n# \*]*",
-                        reply,
-                        flags=re.IGNORECASE,
-                        maxsplit=1,
-                    )
-                    if len(summary_parts) < 2:
-                        raise ValueError("Summary section not found")
+                    # Extract json from response
+                    json_response = json.loads(reply)
 
-                    # Extract content section, trying to handle any AI crazy formatting scenario
-                    content_parts = re.split(
-                        r"[-\n #\*]*Content:[\n# ]*",
-                        summary_parts[1],
-                        flags=re.IGNORECASE,
-                        maxsplit=1,
-                    )
-                    if len(content_parts) < 2:
-                        raise ValueError("Content section not found")
+                    # Check if all required fields are present
+                    if not all(
+                        key in json_response for key in ["title", "summary", "content"]
+                    ):
+                        raise ValueError("Missing required fields in AI response")
 
-                    # Remove any markdown formatting from the title and summary (because AI never listens..)
-                    title = re.sub(r"[*_#`\n\t]", "", summary_parts[0].strip("\n \t-"))
-                    # Remove the word "Title:" if it appears at the start
-                    title = re.sub(r"^Title:? *", "", title)
-
-                    summary = re.sub(r"[*_#`]", "", content_parts[0].strip("\n \t-"))
-                    content = content_parts[1].strip("\n \t")
+                    title = json_response["title"]
+                    summary = json_response["summary"]
+                    content = json_response["content"]
 
                 except ValueError as e:
                     print(f"Error parsing AI response: {e}", type="error")
                     print(f"File processing failed", type="error")
                     return None
 
-                json_response = {"title": title, "summary": summary, "content": content}
-
             if (
-                len(json_response["title"]) > self.min_title_length
-                and len(json_response["summary"]) > self.min_summary_length
-                and len(json_response["content"]) > self.min_content_length
+                len(title) > self.min_title_length
+                and len(summary) > self.min_summary_length
+                and len(content) > self.min_content_length
             ):
                 print("Response is valid! Saving to file...", type="info")
             else:
@@ -244,16 +235,16 @@ Transcript:
             os.makedirs(output_dir, exist_ok=True)
 
             # Save to file
-            filename = f"{self._sanitize_filename(json_response['title'])}.json"
+            filename = f"{self._sanitize_filename(title)}.json"
             filepath = os.path.join(output_dir, filename)
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(json_response, f, ensure_ascii=False, indent=4)
 
             print(f"File processed. Saved as: {filename}", type="success")
             return {
-                "title": json_response["title"],
-                "summary": json_response["summary"],
-                "content": json_response["content"],
+                "title": title,
+                "summary": summary,
+                "content": content,
                 "filename": filename,
                 "filepath": filepath,
             }
@@ -360,6 +351,11 @@ class TranscriptProcessorGUI(tk.Frame):
         """Initialize all GUI components"""
         # Configure main window
         self.master.title("Transcript Processor")
+
+        # Configure button styles
+        style = ttk.Style()
+        style.configure("Begin.TButton", background="#e8ffe8")  # Pale green
+        style.configure("Cancel.TButton", background="#ffe8e8")  # Pale red
 
         # Create main frame
         self.main_frame = ttk.Frame(self.master, padding="10")
@@ -603,10 +599,19 @@ class TranscriptProcessorGUI(tk.Frame):
         selection_text.configure(yscrollcommand=selection_scrollbar.set)
 
         # Add begin button first (always show it)
+        begin_frame = tk.Frame(
+            self.selection_frame, background="#e8ffe8"
+        )  # Pale green background
+        begin_frame.pack(side=tk.RIGHT, padx=5)
+
         self.begin_btn = ttk.Button(
-            self.selection_frame, text="Begin Processing", command=self.begin_processing
+            begin_frame,
+            text="Begin Processing",
+            command=self.begin_processing,
         )
-        self.begin_btn.pack(side=tk.RIGHT, padx=5)
+        self.begin_btn.pack(
+            expand=True, padx=1, pady=1
+        )  # Small padding to show background color
 
         # Add content
         if self.is_directory:
@@ -765,6 +770,9 @@ class TranscriptProcessorGUI(tk.Frame):
         self.process_dir_btn["state"] = "disabled"
         self.begin_btn["text"] = "Cancel Processing"
         self.begin_btn["command"] = self.cancel_processing
+        self.begin_btn.master.configure(
+            background="#ffe8e8"
+        )  # Change frame to pale red
         if hasattr(self, "include_subdirs_cb"):
             self.include_subdirs_cb["state"] = "disabled"
         self.progress_var.set("Processing... Please wait")
@@ -777,6 +785,9 @@ class TranscriptProcessorGUI(tk.Frame):
         self.begin_btn["text"] = "Begin Processing"
         self.begin_btn["command"] = self.begin_processing
         self.begin_btn["state"] = "normal"
+        self.begin_btn.master.configure(
+            background="#e8ffe8"
+        )  # Change frame back to pale green
         if hasattr(self, "include_subdirs_cb"):
             self.include_subdirs_cb["state"] = "normal"
         self.progress_var.set("Ready")
