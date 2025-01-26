@@ -1,6 +1,8 @@
 ### If this application helps you, please consider [Sponsoring me via GitHub Sponsors](https://github.com/sponsors/Domush)
 *(Similar to Patreon, but for open-source devs like me who don't place their creations behind a paywall)*
 
+![image](https://github.com/user-attachments/assets/0548e80f-ad78-445f-a2fe-fbb993591167)
+
 ---
 
 # YouTube Transcript Downloader (YTD)
