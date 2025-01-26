@@ -51,6 +51,7 @@ class AiTranscriptProcessor:
         self._provider = None
         self._client = None
         self._api_key_filename = ".yttApiKeys.json"
+        self._prompts_filename = ".yttConfig.json"
         try:
             self.set_provider(ai_provider)
         except:
@@ -60,23 +61,38 @@ class AiTranscriptProcessor:
         self.min_title_length = 20
         self.min_summary_length = 100
         self.min_content_length = 500
-        self._system_prompt = self._create_system_prompt()
-        self._user_prompt = self._create_user_prompt()
+        self.system_prompt = None
+        self.user_prompt = None
+        self.load_prompts()
 
-    def _create_system_prompt(self) -> str:
-        """Default system prompt template"""
-        return """You are an expert technical instructor..."""  # Your existing system prompt
+    def load_prompts(self):
+        """Load prompt configuration from file"""
+        try:
+            with open(self._prompts_filename, "r") as f:
+                config = json.load(f)
+                self.system_prompt = config.get("system_prompt", None)
+                self.user_prompt = config.get("user_prompt", None)
+        except (FileNotFoundError, json.JSONDecodeError):
+            print(
+                "AI Prompts not configured. You must add prompts prior to processing any transcripts",
+                type="error",
+            )
 
-    def _create_user_prompt(self) -> str:
-        """Default user prompt template"""
-        return """Based on the included transcript..."""  # Your existing user prompt
-
-    def set_prompts(self, system_prompt: str = None, user_prompt: str = None):
-        """Update the prompts used for AI interaction"""
-        if system_prompt is not None:
-            self._system_prompt = system_prompt
-        if user_prompt is not None:
-            self._user_prompt = user_prompt
+    def save_prompt_config(self):
+        """Save prompt configuration to file"""
+        config = {
+            "system_prompt": self.processor.system_prompt,
+            "user_prompt": self.processor.user_prompt,
+        }
+        try:
+            with open(self._prompts_filename, "w") as f:
+                json.dump(config, f, indent=4)
+                return True
+        except IOError as e:
+            print(f"Error saving prompt configuration: {e}", type="error")
+        except Exception as e:
+            print(f"Unexpected error saving prompt configuration: {e}", type="error")
+        return False
 
     # Provider management methods
     @property

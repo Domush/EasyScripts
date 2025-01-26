@@ -81,10 +81,12 @@ class TranscriptProcessorGUI(tk.Frame):
         self.current_path = os.getcwd()
 
         # Save original print function
-        self.original_print = builtins.print
+        self._original_print = builtins.print
+
+        # Log area content for editing prompts
+        self._log_contents = None
 
         # Core components initialization
-        self.processor = AiTranscriptProcessor()
         self.selected_paths = []
         self.is_directory = False
         self.selection_frame = None
@@ -114,9 +116,8 @@ class TranscriptProcessorGUI(tk.Frame):
             "monospace": ("Consolas", 10),
         }
 
-        # Add prompt config
+        # Prompt config file
         self.config_file = ".yttConfig.json"
-        self.load_prompt_config()
 
         # GUI initialization
         self.setup_gui()
@@ -133,6 +134,8 @@ class TranscriptProcessorGUI(tk.Frame):
         # Setup output redirection
         self.setup_output_redirection()
 
+        # Processor class must be loaded after output redirection just in case there are errors to report
+        self.processor = AiTranscriptProcessor()
         self.last_processed_content = ""
 
         self.preview_frame = None
@@ -236,7 +239,7 @@ class TranscriptProcessorGUI(tk.Frame):
             command=lambda: self.edit_prompt("system"),
             style="Action.TButton",
         )
-        self.edit_system_btn.pack(side=tk.LEFT, padx=2)
+        self.edit_system_btn.pack(side=tk.LEFT, padx=8)
 
         self.edit_user_btn = ttk.Button(
             self.edit_frame,
@@ -769,9 +772,9 @@ class TranscriptProcessorGUI(tk.Frame):
             # Print to terminal with color
             if msg_type in COLORS:
                 colored_text = f"{COLORS[msg_type]}{text}{END_COLOR}"
-                self.original_print(colored_text, **kwargs)
+                self._original_print(colored_text, **kwargs)
             else:
-                self.original_print(text, **kwargs)
+                self._original_print(text, **kwargs)
 
             # Log to GUI
             self.log_message(text, msg_type)
@@ -849,7 +852,7 @@ class TranscriptProcessorGUI(tk.Frame):
                 )  # Wait up to 1 second for thread to finish
 
             # Restore original print function
-            builtins.print = self.original_print
+            builtins.print = self._original_print
 
             # Clear the message queue
             while not self.processing_queue.empty():
@@ -863,40 +866,19 @@ class TranscriptProcessorGUI(tk.Frame):
         finally:
             self.master.destroy()
 
-    def load_prompt_config(self):
-        """Load prompt configuration from file"""
-        try:
-            with open(self.config_file, "r") as f:
-                config = json.load(f)
-                self.system_prompt = config.get(
-                    "system_prompt", self.processor._create_system_prompt()
-                )
-                self.user_prompt = config.get(
-                    "user_prompt", self.processor._create_user_prompt()
-                )
-        except (FileNotFoundError, json.JSONDecodeError):
-            # Use defaults from processor
-            self.system_prompt = self.processor._create_system_prompt()
-            self.user_prompt = self.processor._create_user_prompt()
-            self.save_prompt_config()
-
-    def save_prompt_config(self):
-        """Save prompt configuration to file"""
-        config = {"system_prompt": self.system_prompt, "user_prompt": self.user_prompt}
-        with open(self.config_file, "w") as f:
-            json.dump(config, f, indent=4)
-
     def edit_prompt(self, prompt_type: str):
         """Switch log area to prompt editing mode"""
-        # Store current prompt
-        current_prompt = (
-            self.system_prompt if prompt_type == "system" else self.user_prompt
-        )
+        # Get prompt from processor
+        if prompt_type == "system":
+            prompt_text = self.processor.system_prompt
+        else:
+            prompt_text = self.processor.user_prompt
 
         # Configure log area for editing
         self.log_text.configure(state="normal")
+        self._log_contents = self.log_text.get(1.0, tk.END)
         self.log_text.delete(1.0, tk.END)
-        self.log_text.insert(tk.END, current_prompt)
+        self.log_text.insert(tk.END, prompt_text)
 
         # Add save/cancel buttons
         button_frame = ttk.Frame(self.log_frame)
@@ -924,15 +906,13 @@ class TranscriptProcessorGUI(tk.Frame):
         """Save prompt changes and restore log area"""
         new_prompt = self.log_text.get(1.0, tk.END).strip()
         if prompt_type == "system":
-            self.system_prompt = new_prompt
+            self.processor.system_prompt = new_prompt
         else:
-            self.user_prompt = new_prompt
+            self.processor.user_prompt = new_prompt
 
-        self.save_prompt_config()
         self.restore_log_area()
-        self.log_message(
-            f"{prompt_type.title()} prompt updated successfully", "success"
-        )
+        if self.processor.save_prompt_config():
+            self.log_message("Prompt changes saved", "success")
 
     def cancel_prompt_edit(self):
         """Cancel prompt editing and restore log area"""
@@ -949,6 +929,7 @@ class TranscriptProcessorGUI(tk.Frame):
         # Clear and disable text area
         self.log_text.configure(state="normal")
         self.log_text.delete(1.0, tk.END)
+        self.log_text.insert(tk.END, self._log_contents)
         self.log_text.configure(state="disabled")
 
         # Re-enable buttons
