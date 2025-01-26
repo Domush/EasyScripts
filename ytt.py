@@ -72,8 +72,8 @@ class TranscriptProcessorGUI(tk.Frame):
         # Define standard fonts
         self.fonts = {
             "default": ("Segoe UI", 10),
-            "title": ("Segoe UI", 12, "bold"),
-            "header": ("Segoe UI", 11),
+            "title": ("Segoe UI", 11, "bold"),  # Reduced font size for title
+            "header": ("Segoe UI", 10, "bold"),  # Reduced font size for header
             "monospace": ("Consolas", 10),
         }
 
@@ -124,11 +124,11 @@ class TranscriptProcessorGUI(tk.Frame):
         self.main_frame = ttk.Frame(self.master, padding="20")
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Add title
+        # Add title with reduced padding
         title_label = ttk.Label(
             self.main_frame, text="YouTube Transcript Processor", style="Title.TLabel"
         )
-        title_label.pack(pady=(0, 20))
+        title_label.pack(pady=(10, 10))  # Reduced padding
 
         # Provider selection with improved layout
         self.provider_frame = ttk.LabelFrame(
