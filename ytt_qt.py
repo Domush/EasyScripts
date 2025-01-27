@@ -330,8 +330,16 @@ class TranscriptProcessorGUI(QMainWindow):
         self.include_subdirs = QCheckBox("Include Subdirectories")
         self.include_subdirs.setChecked(False)
         process_layout.addWidget(self.include_subdirs)
-
         process_layout.addStretch()
+
+        # Begin button
+        begin_layout = QHBoxLayout()
+        self.begin_btn = QPushButton("Begin Processing")
+        self.begin_btn.setStyleSheet(self.padding_style)
+        self.begin_btn.clicked.connect(self.begin_processing)
+        begin_layout.addStretch()
+        begin_layout.addWidget(self.begin_btn)
+        process_layout.addWidget(self.begin_btn)
 
         main_layout.addLayout(process_layout)
 
@@ -348,15 +356,6 @@ class TranscriptProcessorGUI(QMainWindow):
         self.file_list = QListWidget()
         self.file_list.setStyleSheet("font-size: 16px; padding: 10px;")
         main_layout.addWidget(self.file_list)
-
-        # Begin button
-        begin_layout = QHBoxLayout()
-        self.begin_btn = QPushButton("Begin Processing")
-        self.begin_btn.setStyleSheet(self.padding_style)
-        self.begin_btn.clicked.connect(self.begin_processing)
-        begin_layout.addStretch()
-        begin_layout.addWidget(self.begin_btn)
-        main_layout.addLayout(begin_layout)
 
         # Log
         log_label = QLabel("Status Log")
