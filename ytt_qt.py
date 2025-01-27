@@ -14,9 +14,12 @@ from PyQt6.QtWidgets import (
     QFrame,
     QScrollArea,
     QGroupBox,
+    QListWidget,
+    QListWidgetItem,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
 from PyQt6.QtGui import QFont, QTextCursor, QColor, QTextCharFormat, QShortcut, QKeySequence, QIcon
+import qtawesome as qta
 import sys
 import os
 import json
@@ -34,7 +37,7 @@ from AiTranscriptProcessor import (
 
 
 class TranscriptProcessingThread(QThread):
-    progress_signal = pyqtSignal(str, str)
+    progress_signal = pyqtSignal(str, str, str)  # Add file path to signal
     finished_signal = pyqtSignal()
 
     def __init__(self, processor, provider_key, selected_paths, is_directory, include_subdirs):
@@ -64,7 +67,7 @@ class TranscriptProcessingThread(QThread):
             ProcessingStatus.FILE_SKIPPED: "warning",
         }.get(status, "info")
 
-        self.progress_signal.emit(message, gui_level)
+        self.progress_signal.emit(message, gui_level, data.get("file_path", ""))
 
     def run(self):
         try:
@@ -130,7 +133,7 @@ class TranscriptProcessingThread(QThread):
         except ConfigurationError as e:
             self.progress_signal.emit(f"Configuration error: {str(e)}", "error")
         except Exception as e:
-            self.progress_signal.emit(f"Error during processing: {e}", "error")
+            self.progress_signal.emit(f"Error during processing: {e}", "error", "")
         finally:
             self.finished_signal.emit()
 
@@ -309,26 +312,31 @@ class TranscriptProcessorGUI(QMainWindow):
         # Selection display
         self.selection_group = None
 
-        # Progress section
-        progress_label = QLabel("Progress")
-        progress_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        main_layout.addWidget(progress_label)
+        # File list section
+        file_list_label = QLabel("Files to Process")
+        file_list_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        main_layout.addWidget(file_list_label)
 
-        self.progress_status = QLabel("Ready")
-        main_layout.addWidget(self.progress_status)
+        self.file_list = QListWidget()
+        self.file_list.setStyleSheet("font-size: 16px; padding: 10px;")
+        main_layout.addWidget(self.file_list)
 
+        # Status section
+        status_label = QLabel("Status")
+        status_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        main_layout.addWidget(status_label)
+
+        self.status_label = QLabel("Ready")
+        main_layout.addWidget(self.status_label)
+
+        # Progress bar
         self.progress_bar = QProgressBar()
-        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setRange(0, 100)
         main_layout.addWidget(self.progress_bar)
 
-        # Log section
-        log_label = QLabel("Status Log")
-        log_label.setFont(QFont("Segue UI", 10, QFont.Weight.Bold))
-        main_layout.addWidget(log_label)
-
+        # Log text
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setFont(QFont("Consolas", 10))
         main_layout.addWidget(self.log_text)
 
     def load_providers(self):
@@ -398,22 +406,21 @@ class TranscriptProcessorGUI(QMainWindow):
         self.selection_group = QGroupBox("Selection")
         layout = QVBoxLayout()
 
-        # Selection text display
-        selection_text = QTextEdit()
-        selection_text.setReadOnly(True)
+        # Clear the file list
+        self.file_list.clear()
 
         if self.is_directory:
             directory = self.selected_paths[0]
-            selection_text.setText(f"Directory: {directory}")
-
-            self.include_subdirs = QCheckBox("Include Subdirectories")
-            self.include_subdirs.setChecked(self.include_subdirs_state)
-            layout.addWidget(selection_text)
-            layout.addWidget(self.include_subdirs)
+            files = self.scan_directory(directory, self.include_subdirs_state)
+            for file in files:
+                item = QListWidgetItem(file)
+                item.setIcon(QIcon("path/to/initial/icon.png"))  # Set initial icon
+                self.file_list.addItem(item)
         else:
-            text = "\n".join(f"• {os.path.basename(path)}" for path in self.selected_paths)
-            selection_text.setText(text)
-            layout.addWidget(selection_text)
+            for path in self.selected_paths:
+                item = QListWidgetItem(os.path.basename(path))
+                item.setIcon(QIcon("path/to/initial/icon.png"))  # Set initial icon
+                self.file_list.addItem(item)
 
         # Begin button
         begin_layout = QHBoxLayout()
@@ -430,6 +437,19 @@ class TranscriptProcessorGUI(QMainWindow):
 
         # Add to main layout after process buttons
         self.centralWidget().layout().insertWidget(3, self.selection_group)
+
+    def scan_directory(self, directory, include_subdirs):
+        files = []
+        if include_subdirs:
+            for root, _, filenames in os.walk(directory):
+                for filename in filenames:
+                    if filename.endswith(".json") and not filename.startswith("."):
+                        files.append(os.path.join(root, filename))
+        else:
+            for filename in os.listdir(directory):
+                if filename.endswith(".json") and not filename.startswith("."):
+                    files.append(os.path.join(directory, filename))
+        return files
 
     def begin_processing(self):
         if hasattr(self, "processing_thread") and self.processing_thread is not None:
@@ -462,7 +482,7 @@ class TranscriptProcessorGUI(QMainWindow):
             self.is_directory,
             include_subdirs,
         )
-        self.processing_thread.progress_signal.connect(self.log_message)
+        self.processing_thread.progress_signal.connect(self.update_file_status)
         self.processing_thread.finished_signal.connect(self.stop_processing)
         self.processing_thread.start()
 
@@ -470,8 +490,20 @@ class TranscriptProcessorGUI(QMainWindow):
         self.start_processing()
         self.progress_timer.start()
 
+    def update_file_status(self, message, level, file_path):
+        for index in range(self.file_list.count()):
+            item = self.file_list.item(index)
+            if item.text() == os.path.basename(file_path):
+                if level == "success":
+                    item.setText(f"\u2714 {item.text()}")  # Checkmark
+                elif level == "error":
+                    item.setText(f" {item.text()}")  # Cross
+                elif level == "info":
+                    item.setText(f" {item.text()}")  # Info
+                break
+
     def start_processing(self):
-        self.progress_bar.setRange(0, 0)  # Indeterminate mode
+        self.status_label.setText("Processing... Please wait")
         self.process_file_btn.setEnabled(False)
         self.process_dir_btn.setEnabled(False)
         self.begin_btn.setText("Cancel Processing")
@@ -480,7 +512,7 @@ class TranscriptProcessorGUI(QMainWindow):
 
         if hasattr(self, "include_subdirs"):
             self.include_subdirs.setEnabled(False)
-        self.progress_status.setText("Processing... Please wait")
+        self.progress_timer.start()
 
     def stop_processing(self):
         self.progress_bar.setRange(0, 100)  # Reset to determinate mode
@@ -493,7 +525,7 @@ class TranscriptProcessorGUI(QMainWindow):
 
         if hasattr(self, "include_subdirs"):
             self.include_subdirs.setEnabled(True)
-        self.progress_status.setText("Ready")
+        self.status_label.setText("Ready")
         self.processing_thread = None
         self.progress_timer.stop()
 
