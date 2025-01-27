@@ -481,6 +481,8 @@ class TranscriptProcessorGUI(QMainWindow):
         if total_count > 0:
             self.progress_bar.setValue(int((processed_count / total_count) * 100))
         self.log_message(message, level, file_path)
+        if total_count > 0:
+            self.status_label.setText(f"Processing: {processed_count} of {total_count}")
 
         if file_path:  # Only scroll for actual file updates
             base_name = os.path.basename(file_path)
@@ -503,7 +505,7 @@ class TranscriptProcessorGUI(QMainWindow):
                     break
 
     def start_processing(self):
-        self.status_label.setText("Processing... Please wait")
+        self.status_label.setText("Processing: Starting...")
         self.process_file_btn.setEnabled(False)
         self.process_dir_btn.setEnabled(False)
         self.begin_btn.setText("Cancel Processing")
