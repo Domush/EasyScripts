@@ -290,6 +290,10 @@ class TranscriptProcessorGUI(QMainWindow):
         self.status_label = QLabel("Ready")
         main_layout.addWidget(self.status_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
+        # Top section with provider and prompt buttons
+        top_layout = QHBoxLayout()
+
+        # Provider group on the left
         provider_group = QGroupBox("AI Provider")
         provider_layout = QHBoxLayout()
         self.provider_combo = QComboBox()
@@ -299,9 +303,23 @@ class TranscriptProcessorGUI(QMainWindow):
         provider_layout.addWidget(self.provider_combo)
         provider_layout.addWidget(self.set_default_btn)
         provider_group.setLayout(provider_layout)
-        main_layout.addWidget(provider_group)
+        top_layout.addWidget(provider_group)
 
-        # Buttons layout
+        # AI Prompts group box
+        prompts_group = QGroupBox("AI Prompts")
+        prompts_layout = QHBoxLayout()
+        self.edit_system_btn = QPushButton("Edit System Prompt")
+        self.edit_system_btn.clicked.connect(lambda: self.edit_prompt("system"))
+        self.edit_user_btn = QPushButton("Edit User Prompt")
+        self.edit_user_btn.clicked.connect(lambda: self.edit_prompt("user"))
+        prompts_layout.addWidget(self.edit_system_btn)
+        prompts_layout.addWidget(self.edit_user_btn)
+        prompts_group.setLayout(prompts_layout)
+        top_layout.addWidget(prompts_group)
+        top_layout.addLayout(prompts_layout)
+        main_layout.addLayout(top_layout)
+
+        # File selection layout
         process_layout = QHBoxLayout()
         self.process_file_btn = QPushButton("Select File(s)")
         self.process_file_btn.clicked.connect(self.select_files)
@@ -313,16 +331,8 @@ class TranscriptProcessorGUI(QMainWindow):
         self.include_subdirs.setChecked(False)
         process_layout.addWidget(self.include_subdirs)
 
-        edit_layout = QHBoxLayout()
-        self.edit_system_btn = QPushButton("Edit System Prompt")
-        self.edit_system_btn.clicked.connect(lambda: self.edit_prompt("system"))
-        self.edit_user_btn = QPushButton("Edit User Prompt")
-        self.edit_user_btn.clicked.connect(lambda: self.edit_prompt("user"))
-        edit_layout.addStretch()
-        edit_layout.addWidget(self.edit_system_btn)
-        edit_layout.addWidget(self.edit_user_btn)
+        process_layout.addStretch()
 
-        process_layout.addLayout(edit_layout)
         main_layout.addLayout(process_layout)
 
         self.process_file_btn.setStyleSheet(self.padding_style)
@@ -510,7 +520,6 @@ class TranscriptProcessorGUI(QMainWindow):
         self.begin_btn.clicked.connect(self.begin_processing)
         self.status_label.setText("Processing Complete")
         self.processing_thread = None
-        self.begin_btn.setEnabled(True)
 
     def edit_prompt(self, prompt_type):
         current_prompt = getattr(self.processor, f"{prompt_type}_prompt", "")
