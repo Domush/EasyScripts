@@ -34,9 +34,7 @@ from AiTranscriptProcessor import (
 
 
 class TranscriptProcessingThread(QThread):
-    progress_signal = pyqtSignal(
-        str, str, str, int, int
-    )  # Emitting (message, level, file_path, processed_count, total_count)
+    progress_signal = pyqtSignal(dict)  # Emitting a dictionary
     finished_signal = pyqtSignal()
 
     def __init__(self, processor, provider_key, file_paths):
@@ -46,9 +44,6 @@ class TranscriptProcessingThread(QThread):
         self.provider_key = provider_key
         self.file_paths = file_paths
         self.cancelled = False
-
-    def emit_progress_signal(self, message, level, file_path, processed_count=0, total_count=0):
-        self.progress_signal.emit(message, level, file_path, processed_count, total_count)
 
     def handle_progress(self, message: str, status: ProcessingStatus, data: dict = None):
         if data is None:
@@ -66,7 +61,14 @@ class TranscriptProcessingThread(QThread):
             ProcessingStatus.FILE_SKIPPED: "warning",
         }.get(status, "info")
         file_path = data.get("file_path", "")
-        self.progress_signal.emit(message, gui_level, file_path, 0, 0)
+        signal_data = {
+            "message": message,
+            "level": gui_level,
+            "file_path": file_path,
+            "processed_count": 0,
+            "total_count": 0,
+        }
+        self.progress_signal.emit(signal_data)
 
     def run(self):
         try:
@@ -81,32 +83,78 @@ class TranscriptProcessingThread(QThread):
                     result = self.processor.process_file(file_path)
                     if result:
                         file_success_count += 1
-                        self.progress_signal.emit(
-                            "File processed successfully", "success", file_path, file_success_count, file_count
-                        )
+                        signal_data = {
+                            "message": "File processed successfully",
+                            "level": "success",
+                            "file_path": file_path,
+                            "processed_count": file_success_count,
+                            "total_count": file_count,
+                        }
+                        self.progress_signal.emit(signal_data)
                     else:
-                        self.emit_progress_signal(
-                            "File processing failed", "error", file_path, file_success_count, file_count
-                        )
+                        signal_data = {
+                            "message": "File processing failed",
+                            "level": "error",
+                            "file_path": file_path,
+                            "processed_count": file_success_count,
+                            "total_count": file_count,
+                        }
+                        self.progress_signal.emit(signal_data)
                 except ProcessingError as e:
-                    self.progress_signal.emit(str(e), "error", file_path, 0, 0)
+                    signal_data = {
+                        "message": str(e),
+                        "level": "error",
+                        "file_path": file_path,
+                        "processed_count": 0,
+                        "total_count": 0,
+                    }
+                    self.progress_signal.emit(signal_data)
 
             level = "success" if file_success_count > 0 else "info"
-            self.emit_progress_signal(
-                f"\nProcessing complete. {file_success_count} of {file_count} files processed",
-                level,
-                "",
-                file_success_count,
-                file_count,
-            )
+            signal_data = {
+                "message": f"\nProcessing complete. {file_success_count} of {file_count} files processed",
+                "level": level,
+                "file_path": "",
+                "processed_count": file_success_count,
+                "total_count": file_count,
+            }
+            self.progress_signal.emit(signal_data)
         except InterruptedError as e:
-            self.progress_signal.emit(str(e), "error", "")
+            signal_data = {
+                "message": str(e),
+                "level": "error",
+                "file_path": "",
+                "processed_count": 0,
+                "total_count": 0,
+            }
+            self.progress_signal.emit(signal_data)
         except ProviderError as e:
-            self.progress_signal.emit(f"Provider error: {str(e)}", "error", "")
+            signal_data = {
+                "message": f"Provider error: {str(e)}",
+                "level": "error",
+                "file_path": "",
+                "processed_count": 0,
+                "total_count": 0,
+            }
+            self.progress_signal.emit(signal_data)
         except ConfigurationError as e:
-            self.progress_signal.emit(f"Configuration error: {str(e)}", "error", "")
+            signal_data = {
+                "message": f"Configuration error: {str(e)}",
+                "level": "error",
+                "file_path": "",
+                "processed_count": 0,
+                "total_count": 0,
+            }
+            self.progress_signal.emit(signal_data)
         except Exception as e:
-            self.progress_signal.emit(f"Error during processing: {e}", "error", "", 0, 0)
+            signal_data = {
+                "message": f"Error during processing: {e}",
+                "level": "error",
+                "file_path": "",
+                "processed_count": 0,
+                "total_count": 0,
+            }
+            self.progress_signal.emit(signal_data)
         finally:
             self.finished_signal.emit()
 
@@ -412,7 +460,13 @@ class TranscriptProcessorGUI(QMainWindow):
 
         self.start_processing()
 
-    def update_file_status(self, message, level, file_path, processed_count, total_count):
+    def update_file_status(self, signal_data):
+        message = signal_data.get("message", "")
+        level = signal_data.get("level", "default")
+        file_path = signal_data.get("file_path", "")
+        processed_count = signal_data.get("processed_count", 0)
+        total_count = signal_data.get("total_count", 0)
+
         if total_count > 0:
             self.progress_bar.setValue(int((processed_count / total_count) * 100))
         self.log_message(message, level, file_path)
