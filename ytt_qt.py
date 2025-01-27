@@ -211,7 +211,9 @@ class TranscriptProcessorGUI(QMainWindow):
 
         # Window settings
         self.setWindowTitle("YouTube Transcript Processor")
-        self.resize(800, 600)
+        screen_height = QApplication.primaryScreen().size().height()
+        self.resize(1024, int(screen_height * 2 / 3))
+        self.setMinimumSize(800, 600)
 
         # Progress timer
         self.progress_timer = QTimer()
