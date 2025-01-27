@@ -76,12 +76,13 @@ class TranscriptProcessingThread(QThread):
             file_count = len(self.file_paths)
             processed_count = 0
 
+            processed_count = 0
             for file_path in self.file_paths:
                 if self.cancelled:
                     raise InterruptedError("Processing cancelled by user")
+                processed_count += 1
                 try:
                     result = self.processor.process_file(file_path)
-                    processed_count += 1
                     if result:
                         signal_data = {
                             "message": "File processed successfully",
@@ -221,6 +222,10 @@ class TranscriptProcessorGUI(QMainWindow):
         self.provider_name_to_key = {}
         self.current_path = os.getcwd()
         self.processing_queue = queue.Queue()
+        self.latest_processed_count = 0
+        self.latest_total_count = 0
+        self.latest_processed_count = 0
+        self.latest_total_count = 0
 
         self.configure_styles()
         self.padding_style = "font-size: 14px; padding: 10px 20px;"
@@ -316,7 +321,6 @@ class TranscriptProcessorGUI(QMainWindow):
         prompts_layout.addWidget(self.edit_user_btn)
         prompts_group.setLayout(prompts_layout)
         top_layout.addWidget(prompts_group)
-        top_layout.addLayout(prompts_layout)
         main_layout.addLayout(top_layout)
 
         # File selection layout
@@ -483,6 +487,8 @@ class TranscriptProcessorGUI(QMainWindow):
         self.log_message(message, level, file_path)
         if total_count > 0:
             self.status_label.setText(f"Processing: {processed_count} of {total_count}")
+            self.latest_processed_count = processed_count
+            self.latest_total_count = total_count
 
         if file_path:  # Only scroll for actual file updates
             base_name = os.path.basename(file_path)
@@ -505,7 +511,7 @@ class TranscriptProcessorGUI(QMainWindow):
                     break
 
     def start_processing(self):
-        self.status_label.setText("Processing: Starting...")
+        self.status_label.setText("")
         self.process_file_btn.setEnabled(False)
         self.process_dir_btn.setEnabled(False)
         self.begin_btn.setText("Cancel Processing")
@@ -519,7 +525,10 @@ class TranscriptProcessorGUI(QMainWindow):
         self.begin_btn.setText("Begin Processing")
         self.begin_btn.clicked.disconnect()
         self.begin_btn.clicked.connect(self.begin_processing)
-        self.status_label.setText("Processing Complete")
+        if self.processing_thread and self.processing_thread.cancelled:
+            self.status_label.setText(f"Cancelled after {self.latest_processed_count} files")
+        else:
+            self.status_label.setText("Processing Complete")
         self.processing_thread = None
 
     def edit_prompt(self, prompt_type):
