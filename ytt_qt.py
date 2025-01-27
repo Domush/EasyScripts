@@ -23,9 +23,14 @@ import json
 import threading
 import queue
 from datetime import datetime
-import builtins
 
-from AiTranscriptProcessor import AiTranscriptProcessor
+from AiTranscriptProcessor import (
+    AiTranscriptProcessor,
+    ProcessingStatus,
+    ConfigurationError,
+    ProviderError,
+    ProcessingError,
+)
 
 
 class TranscriptProcessingThread(QThread):
@@ -35,11 +40,31 @@ class TranscriptProcessingThread(QThread):
     def __init__(self, processor, provider_key, selected_paths, is_directory, include_subdirs):
         super().__init__()
         self.processor = processor
+        # Set up progress callback
+        self.processor.progress_callback = self.handle_progress
         self.provider_key = provider_key
         self.selected_paths = selected_paths
         self.is_directory = is_directory
         self.include_subdirs = include_subdirs
         self.cancelled = False
+
+    def handle_progress(self, message: str, status: ProcessingStatus, data: dict = None):
+        """Handle progress updates from the processor"""
+        # Map processor status to GUI levels
+        gui_level = {
+            ProcessingStatus.ERROR_CONFIG: "error",
+            ProcessingStatus.ERROR_PROVIDER: "error",
+            ProcessingStatus.ERROR_REQUEST: "error",
+            ProcessingStatus.ERROR_TIMEOUT: "error",
+            ProcessingStatus.PROCESSING_START: "info",
+            ProcessingStatus.PROCESSING_FILE: "info",
+            ProcessingStatus.REQUEST_START: "info",
+            ProcessingStatus.REQUEST_RETRY: "warning",
+            ProcessingStatus.FILE_COMPLETE: "success",
+            ProcessingStatus.FILE_SKIPPED: "warning",
+        }.get(status, "info")
+
+        self.progress_signal.emit(message, gui_level)
 
     def run(self):
         try:
@@ -61,9 +86,12 @@ class TranscriptProcessingThread(QThread):
                                 raise InterruptedError("Processing cancelled by user")
                             if file.endswith(".json") and not file.startswith("."):
                                 file_count += 1
-                                result = self.processor.process_file(os.path.join(root, file))
-                                if result:
-                                    file_success_count += 1
+                                try:
+                                    result = self.processor.process_file(os.path.join(root, file))
+                                    if result:
+                                        file_success_count += 1
+                                except ProcessingError as e:
+                                    self.progress_signal.emit(str(e), "error")
                 else:
                     self.progress_signal.emit(f"\nProcessing directory: {directory.split(os.sep)[-1]}", "info")
                     for filename in os.listdir(directory):
@@ -71,17 +99,23 @@ class TranscriptProcessingThread(QThread):
                             raise InterruptedError("Processing cancelled by user")
                         if filename.endswith(".json") and not filename.startswith("."):
                             file_count += 1
-                            result = self.processor.process_file(os.path.join(directory, filename))
-                            if result:
-                                file_success_count += 1
+                            try:
+                                result = self.processor.process_file(os.path.join(directory, filename))
+                                if result:
+                                    file_success_count += 1
+                            except ProcessingError as e:
+                                self.progress_signal.emit(str(e), "error")
             else:
                 for file in self.selected_paths:
                     if self.cancelled:
                         raise InterruptedError("Processing cancelled by user")
                     file_count += 1
-                    result = self.processor.process_file(file)
-                    if result:
-                        file_success_count += 1
+                    try:
+                        result = self.processor.process_file(file)
+                        if result:
+                            file_success_count += 1
+                    except ProcessingError as e:
+                        self.progress_signal.emit(str(e), "error")
 
             level = "success" if file_success_count > 0 else "info"
             self.progress_signal.emit(
@@ -91,6 +125,10 @@ class TranscriptProcessingThread(QThread):
 
         except InterruptedError as e:
             self.progress_signal.emit(f"Interrupted error: \n{str(e)}", "error")
+        except ProviderError as e:
+            self.progress_signal.emit(f"Provider error: {str(e)}", "error")
+        except ConfigurationError as e:
+            self.progress_signal.emit(f"Configuration error: {str(e)}", "error")
         except Exception as e:
             self.progress_signal.emit(f"Error during processing: {e}", "error")
         finally:
@@ -152,27 +190,22 @@ class TranscriptProcessorGUI(QMainWindow):
         # Initialize variables
         self.selected_paths = []
         self.is_directory = False
+        self.include_subdirs_state = False  # Store checkbox state
         self.processing_thread = None
         self.providers = {}
         self.provider_name_to_key = {}
-        self._original_print = builtins.print
         self.current_path = os.getcwd()
-
-        # Processing thread components
-        self.processing_queue = queue.Queue()
+        self.processing_queue = queue.Queue()  # Initialize processing queue
 
         # Style configuration
         self.configure_styles()
-
-        # Initalize log queue
-        self.setup_output_redirection()
 
         # Setup UI
         self.padding_style = "font-size: 14px; padding: 10px 20px;"
         self.setup_ui()
 
         # Initialize processor
-        self.processor = AiTranscriptProcessor()
+        self.processor = AiTranscriptProcessor(progress_callback=self.log_message)
 
         self.load_providers()
 
@@ -184,6 +217,30 @@ class TranscriptProcessorGUI(QMainWindow):
         self.progress_timer = QTimer()
         self.progress_timer.timeout.connect(self.update_progress)
         self.progress_timer.setInterval(100)
+
+    def configure_styles(self):
+        self.log_colors = {
+            "default": "#505050",
+            "info": "#2E86C1",
+            "warning": "#E67E22",
+            "error": "#E74C3C",
+            "success": "#27AE60",
+        }
+
+    def log_message(self, message, level="default", data=None):
+        color = self.log_colors.get(level, self.log_colors["default"])
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        formatted_message = f"[{timestamp}] {message.strip()}\n"
+
+        cursor = self.log_text.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.log_text.setTextCursor(cursor)
+
+        char_format = QTextCharFormat()
+        char_format.setForeground(QColor(color))
+        cursor.insertText(formatted_message, char_format)
+
+        self.log_text.ensureCursorVisible()
 
     def setup_ui(self):
         # Create central widget and main layout
@@ -272,15 +329,6 @@ class TranscriptProcessorGUI(QMainWindow):
         self.log_text.setFont(QFont("Consolas", 10))
         main_layout.addWidget(self.log_text)
 
-    def configure_styles(self):
-        self.log_colors = {
-            "default": "#505050",
-            "info": "#2E86C1",
-            "warning": "#E67E22",
-            "error": "#E74C3C",
-            "success": "#27AE60",
-        }
-
     def load_providers(self):
         try:
             with open(".yttApiKeys.json", "r") as f:
@@ -295,7 +343,7 @@ class TranscriptProcessorGUI(QMainWindow):
                     self.provider_combo.setCurrentText(default_provider)
 
         except Exception as e:
-            self.print(f"Error loading providers: {e}", "error")
+            self.log_message(f"Error loading providers: {e}", "error")
 
     def set_default_provider(self):
         selected_name = self.provider_combo.currentText()
@@ -303,7 +351,7 @@ class TranscriptProcessorGUI(QMainWindow):
             try:
                 selected_key = self.provider_name_to_key.get(selected_name)
                 if not selected_key:
-                    self.print(f"Provider {selected_name} not found", "error")
+                    self.log_message(f"Provider {selected_name} not found", "error")
                     return
 
                 with open(".yttApiKeys.json", "r+") as f:
@@ -312,9 +360,9 @@ class TranscriptProcessorGUI(QMainWindow):
                     f.seek(0)
                     json.dump(api_keys, f, indent=4)
                     f.truncate()
-                self.print(f"Set {selected_name} as default provider", "success")
+                self.log_message(f"Set {selected_name} as default provider", "success")
             except Exception as e:
-                self.print(f"Error setting default: {e}", "error")
+                self.log_message(f"Error setting default: {e}", "error")
 
     def select_files(self):
         files, _ = QFileDialog.getOpenFileNames(
@@ -337,6 +385,8 @@ class TranscriptProcessorGUI(QMainWindow):
 
     def update_selection_display(self):
         if self.selection_group is not None:
+            if hasattr(self, "include_subdirs"):
+                self.include_subdirs_state = self.include_subdirs.isChecked()
             self.selection_group.deleteLater()
             self.selection_group = None
 
@@ -355,6 +405,7 @@ class TranscriptProcessorGUI(QMainWindow):
             selection_text.setText(f"Directory: {directory}")
 
             self.include_subdirs = QCheckBox("Include Subdirectories")
+            self.include_subdirs.setChecked(self.include_subdirs_state)
             layout.addWidget(selection_text)
             layout.addWidget(self.include_subdirs)
         else:
@@ -393,7 +444,7 @@ class TranscriptProcessorGUI(QMainWindow):
             return
 
         if not self.provider_combo.currentText():
-            self.print("Please select an AI provider first", "warning")
+            self.log_message("Please select an AI provider first", "warning")
             return
 
         provider_name = self.provider_combo.currentText()
@@ -444,61 +495,6 @@ class TranscriptProcessorGUI(QMainWindow):
         self.processing_thread = None
         self.progress_timer.stop()
 
-    def log_message(self, message, level="default"):
-        color = self.log_colors.get(level, self.log_colors["default"])
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        formatted_message = f"[{timestamp}] {message.strip()}\n"
-
-        cursor = self.log_text.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        self.log_text.setTextCursor(cursor)
-
-        char_format = QTextCharFormat()
-        char_format.setForeground(QColor(color))
-        cursor.insertText(formatted_message, char_format)
-
-        self.log_text.ensureCursorVisible()
-
-    def setup_output_redirection(self):
-        COLORS = {
-            "info": "\033[94m",  # Light blue
-            "warning": "\033[93m",  # Yellow
-            "error": "\033[91m",  # Light red
-            "success": "\033[92m",  # Green
-        }
-        END_COLOR = "\033[0m"
-
-        def gui_print(*args, **kwargs):
-            msg_type = kwargs.pop("type", None)
-            text = " ".join(str(arg) for arg in args)
-
-            # Print to terminal with color
-            if msg_type in COLORS:
-                colored_text = f"{COLORS[msg_type]}{text}{END_COLOR}"
-                self._original_print(colored_text, **kwargs)
-            else:
-                self._original_print(text, **kwargs)
-
-            # Log to GUI
-            self.log_message(text, msg_type)
-
-        builtins.print = gui_print
-
-    def edit_prompt(self, prompt_type):
-        current_prompt = self.processor.system_prompt if prompt_type == "system" else self.processor.user_prompt
-        editor = PromptEditorDialog(self, prompt_type, current_prompt, self.save_prompt_changes)
-        editor.show()
-
-    def save_prompt_changes(self, prompt_type, new_prompt):
-        if prompt_type == "system":
-            self.processor.system_prompt = new_prompt
-        else:
-            self.processor.user_prompt = new_prompt
-
-        if self.processor.save_prompt_config():
-            self.log_message("Prompt changes saved", "success")
-            self.update_begin_button_state()
-
     def update_begin_button_state(self):
         prompts_valid = self.processor.system_prompt and self.processor.user_prompt
         if hasattr(self, "begin_btn"):
@@ -513,7 +509,7 @@ class TranscriptProcessorGUI(QMainWindow):
                     if level == "done":
                         self.stop_processing()
                         return
-                    self.print(message, level)
+                    self.log_message(message, level)
                 except queue.Empty:
                     break
 
@@ -524,7 +520,7 @@ class TranscriptProcessorGUI(QMainWindow):
             self.progress_timer.start(100)
 
         except Exception as e:
-            self.print(f"Error updating progress: {e}", "error")
+            self.log_message(f"Error updating progress: {e}", "error")
             self.stop_processing()
 
 

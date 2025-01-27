@@ -38,23 +38,73 @@
 from datetime import datetime
 import json, re, os
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Callable
+from enum import Enum
 
 # Third-party imports
 from openai import OpenAI
 
 
+class ProcessingStatus(str, Enum):
+    """Status codes for processor operations"""
+
+    # Error states
+    ERROR_CONFIG = "error_config"
+    ERROR_PROVIDER = "error_provider"
+    ERROR_REQUEST = "error_request"
+    ERROR_TIMEOUT = "error_timeout"
+
+    # Progress states
+    PROCESSING_START = "processing_start"
+    PROCESSING_FILE = "processing_file"
+    REQUEST_START = "request_start"
+    REQUEST_RETRY = "request_retry"
+
+    # Success states
+    FILE_COMPLETE = "file_complete"
+    FILE_SKIPPED = "file_skipped"
+
+
+class TranscriptProcessorError(Exception):
+    """Base exception class for transcript processor errors"""
+
+    pass
+
+
+class ConfigurationError(TranscriptProcessorError):
+    """Configuration related errors"""
+
+    pass
+
+
+class ProviderError(TranscriptProcessorError):
+    """AI provider related errors"""
+
+    pass
+
+
+class ProcessingError(TranscriptProcessorError):
+    """Processing related errors"""
+
+    pass
+
+
 class AiTranscriptProcessor:
     """Main processor class for handling AI transcript reformatting"""
 
-    def __init__(self, ai_provider="default"):
+    def __init__(
+        self,
+        progress_callback: Optional[Callable[[str, ProcessingStatus, Optional[Dict]], None]] = None,
+        ai_provider: str = "default",
+    ):
         self._provider = None
         self._client = None
         self._api_key_filename = ".yttApiKeys.json"
         self._prompts_filename = ".yttConfig.json"
+        self.progress_callback = progress_callback
         try:
             self.set_provider(ai_provider)
-        except:
+        except ProviderError:
             # Silently fail if default provider is not found
             pass
         # Minimum lengths for each section (anything shorter will be skipped)
@@ -65,6 +115,11 @@ class AiTranscriptProcessor:
         self.user_prompt = ""
         self.load_prompts()
 
+    def notify(self, status: ProcessingStatus, message: str, data: Optional[Dict] = None) -> None:
+        """Send status update via callback if configured"""
+        if self.progress_callback:
+            self.progress_callback(message, status, data)
+
     def load_prompts(self):
         """Load prompt configuration from file"""
         try:
@@ -73,9 +128,9 @@ class AiTranscriptProcessor:
                 self.system_prompt = config.get("system_prompt", "").strip()
                 self.user_prompt = config.get("user_prompt", "").strip()
         except (FileNotFoundError, json.JSONDecodeError):
-            print(
+            self.notify(
+                ProcessingStatus.ERROR_CONFIG,
                 "AI Prompts not configured. You must add prompts prior to processing any transcripts",
-                type="error",
             )
             self.system_prompt = ""
             self.user_prompt = ""
@@ -91,10 +146,11 @@ class AiTranscriptProcessor:
                 json.dump(config, f, indent=4)
                 return True
         except IOError as e:
-            print(f"Error saving prompt configuration: {e}", type="error")
+            self.notify(ProcessingStatus.ERROR_CONFIG, f"Error saving prompt configuration: {e}")
+            return False
         except Exception as e:
-            print(f"Unexpected error saving prompt configuration: {e}", type="error")
-        return False
+            self.notify(ProcessingStatus.ERROR_CONFIG, f"Unexpected error saving prompt configuration: {e}")
+            return False
 
     # Provider management methods
     @property
@@ -109,13 +165,18 @@ class AiTranscriptProcessor:
 
     # Sets the provider based on provider name
     def set_provider(self, provider_name):
-        with open(self._api_key_filename, "r") as f:
-            api_keys = json.load(f)
+        """Sets the provider based on provider name"""
+        try:
+            with open(self._api_key_filename, "r") as f:
+                api_keys = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            raise ConfigurationError(f"Failed to load API keys: {e}")
 
         provider = api_keys["ai-providers"].get(provider_name)
         if not provider:
-            print(f"Provider '{provider_name}' not found", type="error")
-            return None
+            error_msg = f"Provider '{provider_name}' not found"
+            self.notify(ProcessingStatus.ERROR_PROVIDER, error_msg)
+            raise ProviderError(error_msg)
 
         self._set_client(provider["api_key"], provider["base_url"])
         self.provider = provider
@@ -175,7 +236,10 @@ Here is the original metadata and transcript for reference:
         for attempt in range(MAX_RETRIES):
             try:
                 model = self.provider.get("model") or "o1"
-                print(f"Sending request to AI... {f"(attempt {attempt + 1}/{MAX_RETRIES})" if attempt > 0 else ""}")
+                self.notify(
+                    ProcessingStatus.REQUEST_START,
+                    f"Sending request to AI... {f'(attempt {attempt + 1}/{MAX_RETRIES})' if attempt > 0 else ''}",
+                )
 
                 response = self._client.chat.completions.create(
                     model=model,
@@ -189,16 +253,18 @@ Here is the original metadata and transcript for reference:
 
             except TimeoutError:
                 if attempt == MAX_RETRIES - 1:
-                    print("Request timed out after all retries", type="error")
-                    return None
-                print("Request timed out, retrying...", type="warning")
+                    error_msg = "Request timed out after all retries"
+                    self.notify(ProcessingStatus.ERROR_TIMEOUT, error_msg)
+                    raise ProcessingError(error_msg)
+                self.notify(ProcessingStatus.REQUEST_RETRY, "Request timed out, retrying...")
                 await asyncio.sleep(1)
             except Exception as e:
-                print(f"Request to AI failed: {e}", type="error")
-                return None
+                error_msg = f"Request to AI failed: {e}"
+                self.notify(ProcessingStatus.ERROR_REQUEST, error_msg)
+                raise ProcessingError(error_msg)
 
             if not response:
-                print("Error: No response received from AI", type="error")
+                self.notify(ProcessingStatus.ERROR_REQUEST, "Error: No response received from AI")
                 continue
 
             try:
@@ -206,15 +272,10 @@ Here is the original metadata and transcript for reference:
                 return result
             except Exception as e:
                 if attempt == MAX_RETRIES - 1:
-                    print(
-                        f"Error processing AI response after all retries: {e}",
-                        type="error",
-                    )
-                    return None
-                print(
-                    f"Error processing AI response, retrying...",
-                    type="warning",
-                )
+                    error_msg = f"Error processing AI response after all retries: {e}"
+                    self.notify(ProcessingStatus.ERROR_REQUEST, error_msg)
+                    raise ProcessingError(error_msg)
+                self.notify(ProcessingStatus.REQUEST_RETRY, "Error processing AI response, retrying...")
                 await asyncio.sleep(1)
 
     def _process_ai_response(self, response, input_json):
@@ -258,7 +319,7 @@ Here is the original metadata and transcript for reference:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(json_response, f, ensure_ascii=False, indent=4)
 
-        print(f"File processed. Saved as: {filename}", type="success")
+        self.notify(ProcessingStatus.FILE_COMPLETE, f"File processed. Saved as: {filename}")
 
         return {
             "title": title,
@@ -281,18 +342,18 @@ Here is the original metadata and transcript for reference:
 
         # Get just the filename without path
         filename = os.path.basename(file)
-        print(f"\nProcessing file: {filename.split(os.sep)[-1]}", type="info")
+        self.notify(ProcessingStatus.PROCESSING_FILE, f"Processing file: {filename.split(os.sep)[-1]}")
 
         # Check if file was previously processed by using just the filename
         if filename in processed_files:
             output_path = processed_files[filename]["output_path"]
             if os.path.exists(output_path):
-                print(f"File already processed. Skipping.", type="warning")
+                self.notify(ProcessingStatus.FILE_SKIPPED, "File already processed. Skipping.")
                 return None
             else:
-                print(
-                    f"File has previously been processed, but the output file is missing. Reprocessing...",
-                    type="warning",
+                self.notify(
+                    ProcessingStatus.PROCESSING_START,
+                    "File has previously been processed, but the output file is missing. Reprocessing...",
                 )
 
         # Process the file
