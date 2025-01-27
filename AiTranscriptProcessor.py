@@ -65,8 +65,6 @@ class AiTranscriptProcessor:
         self.user_prompt = ""
         self.load_prompts()
 
-        print("AI Transcript Processor initialized", type="info")
-
     def load_prompts(self):
         """Load prompt configuration from file"""
         try:
@@ -79,8 +77,8 @@ class AiTranscriptProcessor:
                 "AI Prompts not configured. You must add prompts prior to processing any transcripts",
                 type="error",
             )
-            self.system_prompt = None
-            self.user_prompt = None
+            self.system_prompt = ""
+            self.user_prompt = ""
 
     def save_prompt_config(self):
         """Save prompt configuration to file"""
@@ -177,9 +175,7 @@ Here is the original metadata and transcript for reference:
         for attempt in range(MAX_RETRIES):
             try:
                 model = self.provider.get("model") or "o1"
-                print(
-                    f"Sending request to AI... {f"(attempt {attempt + 1}/{MAX_RETRIES})" if attempt > 0 else ""}"
-                )
+                print(f"Sending request to AI... {f"(attempt {attempt + 1}/{MAX_RETRIES})" if attempt > 0 else ""}")
 
                 response = self._client.chat.completions.create(
                     model=model,
@@ -223,9 +219,7 @@ Here is the original metadata and transcript for reference:
 
     def _process_ai_response(self, response, input_json):
         """Process the AI response and save results"""
-        if hasattr(response.choices, "model_extra") and getattr(
-            response.choices.model_extra, "error", None
-        ):
+        if hasattr(response.choices, "model_extra") and getattr(response.choices.model_extra, "error", None):
             raise ValueError(response.choices.model_extra.error)
 
         reply = response.choices[0].message.content

@@ -136,6 +136,8 @@ class TranscriptProcessorGUI(tk.Frame):
 
         # Processor class must be loaded after output redirection just in case there are errors to report
         self.processor = AiTranscriptProcessor()
+        print("AI Transcript Processor initialized", type="info")
+
         self.last_processed_content = ""
 
         print("Transcript Processor ready", type="info")
@@ -151,9 +153,7 @@ class TranscriptProcessorGUI(tk.Frame):
         self.master.title("YouTube Transcript Processor")
 
         # Configure all styles at once
-        style.configure(
-            ".", font=self.fonts["default"], foreground=COLORS["text"]["default"]
-        )
+        style.configure(".", font=self.fonts["default"], foreground=COLORS["text"]["default"])
         style.configure("Title.TLabel", font=self.fonts["title"])
         style.configure("Header.TLabel", font=self.fonts["header"])
         style.configure("TCombobox", foreground=COLORS["text"]["default"])
@@ -171,15 +171,11 @@ class TranscriptProcessorGUI(tk.Frame):
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Add title with reduced padding
-        title_label = ttk.Label(
-            self.main_frame, text="YouTube Transcript Processor", style="Title.TLabel"
-        )
+        title_label = ttk.Label(self.main_frame, text="YouTube Transcript Processor", style="Title.TLabel")
         title_label.pack(pady=(10, 10))  # Reduced padding
 
         # Provider selection with improved layout
-        self.provider_frame = ttk.LabelFrame(
-            self.main_frame, text="AI Provider", padding="10"
-        )
+        self.provider_frame = ttk.LabelFrame(self.main_frame, text="AI Provider", padding="10")
         self.provider_frame.pack(fill=tk.X, pady=(0, 15))
 
         self.provider_var = tk.StringVar()
@@ -263,9 +259,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
         )
 
         # Progress section with header
-        progress_header = ttk.Label(
-            self.main_frame, text="Progress", style="Header.TLabel"
-        )
+        progress_header = ttk.Label(self.main_frame, text="Progress", style="Header.TLabel")
         progress_header.pack(fill=tk.X, pady=(0, 5))
 
         # Add progress bar
@@ -295,34 +289,20 @@ the raw transcript into a well-formatted, easy-to-read document.""",
             padx=10,
             pady=10,
         )
-        self.log_text.pack(
-            side=tk.LEFT, fill=tk.BOTH, expand=True
-        )  # Make sure text widget is packed properly
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)  # Make sure text widget is packed properly
 
         # Configure default text color for non-tagged text
         self.log_text.configure(foreground="#505050")  # Medium gray instead of black
 
         # Configure status tags with improved colors
-        self.log_text.tag_configure(
-            "log", foreground="#707070"
-        )  # Match default text color
-        self.log_text.tag_configure(
-            "info", foreground=COLORS["text"]["info"]
-        )  # Softer blue
-        self.log_text.tag_configure(
-            "warning", foreground=COLORS["text"]["warning"]
-        )  # Softer orange
-        self.log_text.tag_configure(
-            "error", foreground=COLORS["text"]["error"]
-        )  # Softer red
-        self.log_text.tag_configure(
-            "success", foreground=COLORS["text"]["success"]
-        )  # Softer green
+        self.log_text.tag_configure("log", foreground="#707070")  # Match default text color
+        self.log_text.tag_configure("info", foreground=COLORS["text"]["info"])  # Softer blue
+        self.log_text.tag_configure("warning", foreground=COLORS["text"]["warning"])  # Softer orange
+        self.log_text.tag_configure("error", foreground=COLORS["text"]["error"])  # Softer red
+        self.log_text.tag_configure("success", foreground=COLORS["text"]["success"])  # Softer green
 
         # Add scrollbar
-        log_scrollbar = ttk.Scrollbar(
-            self.log_frame, orient=tk.VERTICAL, command=self.log_text.yview
-        )
+        log_scrollbar = ttk.Scrollbar(self.log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
         log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.log_text.configure(yscrollcommand=log_scrollbar.set)
 
@@ -330,9 +310,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
         self.load_providers()
 
         # Add tooltip for process file button
-        self._create_tooltip(
-            self.process_file_btn, "Select one or more JSON files to process (Ctrl+O)"
-        )
+        self._create_tooltip(self.process_file_btn, "Select one or more JSON files to process (Ctrl+O)")
 
         # Add tooltip for process directory button
         self._create_tooltip(
@@ -345,12 +323,8 @@ the raw transcript into a well-formatted, easy-to-read document.""",
 
     def bind_shortcuts(self):
         """Setup keyboard shortcuts with stored binding IDs"""
-        self.bindings["file"] = self.master.bind(
-            "<Control-o>", lambda e: self.select_files()
-        )
-        self.bindings["dir"] = self.master.bind(
-            "<Control-d>", lambda e: self.select_directory()
-        )
+        self.bindings["file"] = self.master.bind("<Control-o>", lambda e: self.select_files())
+        self.bindings["dir"] = self.master.bind("<Control-d>", lambda e: self.select_directory())
         self.bindings["begin"] = None  # Will be set when begin button is created
 
     def _create_tooltip(self, widget, text):
@@ -389,19 +363,11 @@ the raw transcript into a well-formatted, easy-to-read document.""",
         try:
             with open(".yttApiKeys.json", "r") as f:
                 api_keys = json.load(f)
-                self.providers = {
-                    key: value
-                    for key, value in api_keys["ai-providers"].items()
-                    if key != "default"
-                }
+                self.providers = {key: value for key, value in api_keys["ai-providers"].items() if key != "default"}
                 # Create mapping of display names to provider keys
-                self.provider_name_to_key = {
-                    value["name"]: key for key, value in self.providers.items()
-                }
+                self.provider_name_to_key = {value["name"]: key for key, value in self.providers.items()}
                 provider_names = list(self.provider_name_to_key.keys())
-                default_provider = (
-                    api_keys["ai-providers"].get("default", {}).get("name")
-                )
+                default_provider = api_keys["ai-providers"].get("default", {}).get("name")
                 self.provider_combo["values"] = provider_names
                 if default_provider:
                     self.provider_combo.set(default_provider)
@@ -416,11 +382,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
             try:
                 # Find the provider key by matching the name
                 selected_key = next(
-                    (
-                        key
-                        for key, value in self.providers.items()
-                        if value["name"] == selected_name
-                    ),
+                    (key for key, value in self.providers.items() if value["name"] == selected_name),
                     None,
                 )
                 if not selected_key:
@@ -429,9 +391,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
 
                 with open(".yttApiKeys.json", "r+") as f:
                     api_keys = json.load(f)
-                    api_keys["ai-providers"]["default"] = api_keys["ai-providers"][
-                        selected_key
-                    ]
+                    api_keys["ai-providers"]["default"] = api_keys["ai-providers"][selected_key]
                     f.seek(0)
                     json.dump(api_keys, f, indent=4)
                     f.truncate()
@@ -472,9 +432,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
             return
 
         # Create new selection frame
-        self.selection_frame = ttk.LabelFrame(
-            self.main_frame, text="Selection", padding="5"
-        )
+        self.selection_frame = ttk.LabelFrame(self.main_frame, text="Selection", padding="5")
         self.selection_frame.pack(fill=tk.X, pady=5, after=self.process_frame)
 
         # Calculate required height based on content
@@ -508,9 +466,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
         selection_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # Only show scrollbar if content exceeds display height
-        selection_scrollbar = ttk.Scrollbar(
-            selection_text_frame, orient=tk.VERTICAL, command=selection_text.yview
-        )
+        selection_scrollbar = ttk.Scrollbar(selection_text_frame, orient=tk.VERTICAL, command=selection_text.yview)
         if num_lines > 10:  # Show scrollbar only if needed
             selection_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         selection_text.configure(yscrollcommand=selection_scrollbar.set)
@@ -534,9 +490,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
 
         # Add tooltip for begin button and bind shortcut
         self._create_tooltip(self.begin_btn, "Start processing selected files (Ctrl+B)")
-        self.bindings["begin"] = self.master.bind(
-            "<Control-b>", lambda e: self.begin_processing()
-        )
+        self.bindings["begin"] = self.master.bind("<Control-b>", lambda e: self.begin_processing())
 
         # Add content
         if self.is_directory:
@@ -570,13 +524,9 @@ the raw transcript into a well-formatted, easy-to-read document.""",
 
         # Update tooltip using _create_tooltip method
         if prompts_valid:
-            self._create_tooltip(
-                self.begin_btn, "Start processing selected files (Ctrl+B)"
-            )
+            self._create_tooltip(self.begin_btn, "Start processing selected files (Ctrl+B)")
         else:
-            self._create_tooltip(
-                self.begin_btn, "Configure system and user prompts before processing"
-            )
+            self._create_tooltip(self.begin_btn, "Configure system and user prompts before processing")
 
     # File processing methods
     def begin_processing(self):
@@ -603,9 +553,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
     def cancel_processing(self):
         """Cancel ongoing processing"""
         self.processing_cancelled = True
-        self.log_message(
-            "Cancelling... Please wait for current operation to complete.", "warning"
-        )
+        self.log_message("Cancelling... Please wait for current operation to complete.", "warning")
         self.begin_btn["state"] = "disabled"  # Prevent multiple cancel clicks
 
     def _process_files(self):
@@ -637,9 +585,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
                                 raise InterruptedError("Processing cancelled by user")
                             if file.endswith(".json") and not file.startswith("."):
                                 file_count += 1
-                                result = self.processor.process_file(
-                                    os.path.join(root, file)
-                                )
+                                result = self.processor.process_file(os.path.join(root, file))
                                 if result:
                                     file_success_count += 1
                 else:
@@ -653,9 +599,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
                             raise InterruptedError("Processing cancelled by user")
                         if filename.endswith(".json") and not filename.startswith("."):
                             file_count += 1
-                            result = self.processor.process_file(
-                                os.path.join(directory, filename)
-                            )
+                            result = self.processor.process_file(os.path.join(directory, filename))
                             if result:
                                 file_success_count += 1
             else:
@@ -718,9 +662,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
         self._create_tooltip(self.begin_btn, "Cancel processing (Escape)")
         if self.bindings.get("begin"):
             self.master.unbind("<Control-b>", self.bindings["begin"])
-        self.bindings["escape"] = self.master.bind(
-            "<Escape>", lambda e: self.cancel_processing()
-        )
+        self.bindings["escape"] = self.master.bind("<Escape>", lambda e: self.cancel_processing())
 
         # Use configure() on the Frame, not the Button's master
         if isinstance(self.begin_btn.master, tk.Frame):
@@ -742,9 +684,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
         self._create_tooltip(self.begin_btn, "Start processing selected files (Ctrl+B)")
         if self.bindings.get("escape"):
             self.master.unbind("<Escape>", self.bindings["escape"])
-        self.bindings["begin"] = self.master.bind(
-            "<Control-b>", lambda e: self.begin_processing()
-        )
+        self.bindings["begin"] = self.master.bind("<Control-b>", lambda e: self.begin_processing())
 
         self.begin_btn["state"] = "normal"
         # Use configure() on the Frame, not the Button's master
@@ -840,11 +780,7 @@ the raw transcript into a well-formatted, easy-to-read document.""",
 
     def edit_prompt(self, prompt_type: str):
         """Open prompt editor dialog"""
-        current_prompt = (
-            self.processor.system_prompt
-            if prompt_type == "system"
-            else self.processor.user_prompt
-        )
+        current_prompt = self.processor.system_prompt if prompt_type == "system" else self.processor.user_prompt
         PromptEditor(self.master, prompt_type, current_prompt, self.save_prompt_changes)
 
     def save_prompt_changes(self, prompt_type: str, new_prompt: str):
@@ -912,9 +848,7 @@ class PromptEditor(tk.Toplevel):
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Add text editor
-        self.editor = tk.Text(
-            main_frame, wrap=tk.WORD, font=("Consolas", 10), padx=5, pady=5
-        )
+        self.editor = tk.Text(main_frame, wrap=tk.WORD, font=("Consolas", 10), padx=5, pady=5)
         self.editor.pack(fill=tk.BOTH, expand=True)
 
         # Add scrollbar
@@ -930,14 +864,10 @@ class PromptEditor(tk.Toplevel):
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill=tk.X, pady=(10, 0))
 
-        save_btn = ttk.Button(
-            button_frame, text="Save Changes", command=self.save, style="Action.TButton"
-        )
+        save_btn = ttk.Button(button_frame, text="Save Changes", command=self.save, style="Action.TButton")
         save_btn.pack(side=tk.RIGHT, padx=5)
 
-        cancel_btn = ttk.Button(
-            button_frame, text="Cancel", command=self.cancel, style="Action.TButton"
-        )
+        cancel_btn = ttk.Button(button_frame, text="Cancel", command=self.cancel, style="Action.TButton")
         cancel_btn.pack(side=tk.RIGHT, padx=5)
 
     def save(self):
