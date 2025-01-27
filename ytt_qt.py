@@ -245,6 +245,8 @@ class TranscriptProcessorGUI(QMainWindow):
         self.load_providers()
 
         self.setWindowTitle("YouTube Transcript Processor")
+        icon = QIcon("icon.png")
+        self.setWindowIcon(icon)
         screen_height = QApplication.primaryScreen().size().height()
         self.resize(1024, int(screen_height * 2 / 3))
         self.setMinimumSize(800, 600)
@@ -258,7 +260,7 @@ class TranscriptProcessorGUI(QMainWindow):
             "success": "#27AE60",
         }
 
-    def log_message(self, message, level="default", file_path=None):
+    def log_message(self, message, level="default"):
         color = self.log_colors.get(level, self.log_colors["default"])
         timestamp = datetime.now().strftime("%H:%M:%S")
         text = f"[{timestamp}] {message.strip()}"
