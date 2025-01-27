@@ -74,32 +74,24 @@ class TranscriptProcessingThread(QThread):
         try:
             self.processor.set_provider(self.provider_key)
             file_count = len(self.file_paths)
-            file_success_count = 0
+            processed_count = 0
 
             for file_path in self.file_paths:
                 if self.cancelled:
                     raise InterruptedError("Processing cancelled by user")
                 try:
                     result = self.processor.process_file(file_path)
+                    processed_count += 1
                     if result:
-                        file_success_count += 1
                         signal_data = {
                             "message": "File processed successfully",
                             "level": "success",
                             "file_path": file_path,
-                            "processed_count": file_success_count,
+                            "processed_count": processed_count,
                             "total_count": file_count,
                         }
                         self.progress_signal.emit(signal_data)
-                    else:
-                        signal_data = {
-                            "message": "File processing failed",
-                            "level": "error",
-                            "file_path": file_path,
-                            "processed_count": file_success_count,
-                            "total_count": file_count,
-                        }
-                        self.progress_signal.emit(signal_data)
+                    # Skip emitting duplicate message for skipped files since it comes from the processor
                 except ProcessingError as e:
                     signal_data = {
                         "message": str(e),
@@ -110,12 +102,12 @@ class TranscriptProcessingThread(QThread):
                     }
                     self.progress_signal.emit(signal_data)
 
-            level = "success" if file_success_count > 0 else "info"
+            success_msg = f"\nProcessing complete. {processed_count} of {file_count} files processed"
             signal_data = {
-                "message": f"\nProcessing complete. {file_success_count} of {file_count} files processed",
-                "level": level,
+                "message": success_msg,
+                "level": "success" if processed_count > 0 else "info",
                 "file_path": "",
-                "processed_count": file_success_count,
+                "processed_count": processed_count,
                 "total_count": file_count,
             }
             self.progress_signal.emit(signal_data)
@@ -226,10 +218,6 @@ class TranscriptProcessorGUI(QMainWindow):
         screen_height = QApplication.primaryScreen().size().height()
         self.resize(1024, int(screen_height * 2 / 3))
         self.setMinimumSize(800, 600)
-
-        self.progress_timer = QTimer()
-        self.progress_timer.timeout.connect(self.update_progress)
-        self.progress_timer.setInterval(100)
 
     def configure_styles(self):
         self.log_colors = {
@@ -477,12 +465,12 @@ class TranscriptProcessorGUI(QMainWindow):
             if item.text() == base_name:
                 if level == "success":
                     item.setIcon(qta.icon("fa.check", color="green"))
-                elif level == "error":
+                elif "already processed" in message:
+                    item.setIcon(qta.icon("fa.square", color="gray"))
+                elif level == "error" or message == "File processing failed":
                     item.setIcon(qta.icon("fa.times", color="red"))
                 elif level == "warning":
-                    item.setIcon(qta.icon("fa.square", color="gray"))
-                elif level == "error":
-                    item.setIcon(qta.icon("fa.times", color="red"))
+                    item.setIcon(qta.icon("fa.exclamation", color="orange"))
                 elif level == "info":
                     item.setIcon(qta.icon("fa.spinner", color="blue"))
                 break
@@ -494,28 +482,17 @@ class TranscriptProcessorGUI(QMainWindow):
         self.begin_btn.setText("Cancel Processing")
         self.begin_btn.clicked.disconnect()
         self.begin_btn.clicked.connect(self.begin_processing)
-        self.progress_bar.setVisible(False)
         self.progress_bar.setVisible(True)
-        self.progress_timer.start()
 
     def stop_processing(self):
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
         self.process_file_btn.setEnabled(True)
         self.process_dir_btn.setEnabled(True)
         self.begin_btn.setText("Begin Processing")
         self.begin_btn.clicked.disconnect()
         self.begin_btn.clicked.connect(self.begin_processing)
-        self.status_label.setText("Ready")
+        self.status_label.setText("Processing Complete")
         self.processing_thread = None
-        self.progress_timer.stop()
         self.begin_btn.setEnabled(True)
-
-    def update_progress(self):
-        # Animate progress bar in indeterminate mode
-        value = self.progress_bar.value()
-        value = (value + 5) % 100
-        self.progress_bar.setValue(value)
 
     def edit_prompt(self, prompt_type):
         current_prompt = getattr(self.processor, f"{prompt_type}_prompt", "")
