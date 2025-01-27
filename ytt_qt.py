@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
-from PyQt6.QtGui import QFont, QTextCursor, QColor, QTextCharFormat
+from PyQt6.QtGui import QFont, QTextCursor, QColor, QTextCharFormat, QShortcut, QKeySequence
 import sys
 import os
 import json
@@ -122,11 +122,16 @@ class PromptEditorDialog(QWidget):
             self.editor.setText(current_prompt)
         layout.addWidget(self.editor)
 
-        # Buttons
+        # Add hotkeys
+        save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        save_shortcut.activated.connect(self.save)
+        cancel_shortcut = QShortcut(QKeySequence("Escape"), self)
+        cancel_shortcut.activated.connect(self.close)
+
         button_layout = QHBoxLayout()
-        save_btn = QPushButton("Save Changes")
+        save_btn = QPushButton("Save Changes (Ctrl+S)")
         save_btn.clicked.connect(self.save)
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton("Cancel (Esc)")
         cancel_btn.clicked.connect(self.close)
 
         button_layout.addStretch()
