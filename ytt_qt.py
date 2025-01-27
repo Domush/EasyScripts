@@ -226,6 +226,7 @@ class TranscriptProcessorGUI(QMainWindow):
         super().__init__()
         self.selected_paths = []
         self.is_directory = False
+        self.selected_directory = None
         self.include_subdirs_state = False
         self.processing_thread = None
         self.providers = {}
@@ -343,6 +344,7 @@ class TranscriptProcessorGUI(QMainWindow):
         process_layout.addWidget(self.process_dir_btn)
         self.include_subdirs = QCheckBox("Include Subdirectories")
         self.include_subdirs.setChecked(False)
+        self.include_subdirs.stateChanged.connect(self.rescan_directory)
         process_layout.addWidget(self.include_subdirs)
         process_layout.addStretch()
 
@@ -447,26 +449,8 @@ class TranscriptProcessorGUI(QMainWindow):
         directory = QFileDialog.getExistingDirectory(self, "Select Directory to Process", self.current_path)
         if directory:
             self.is_directory = True
-            self.file_list.clear()
-            directory = os.path.normpath(directory)
-            # Gather all .json files from this directory (and subdirectories if checked).
-            files_to_add = []
-            if self.include_subdirs.isChecked():
-                for root, _, files in os.walk(directory):
-                    for file in files:
-                        if file.endswith(".json") and not file.startswith("."):
-                            files_to_add.append(os.path.normpath(os.path.join(root, file)))
-            else:
-                for file in os.listdir(directory):
-                    if file.endswith(".json") and not file.startswith("."):
-                        files_to_add.append(os.path.normpath(os.path.join(directory, file)))
-
-            # Display them in the GUI
-            for file_path in files_to_add:
-                item = QListWidgetItem(os.path.basename(file_path))
-                self.file_list.addItem(item)
-            # Here, we store these file paths directly, so the QThread can process them
-            self.selected_paths = files_to_add
+            self.selected_directory = os.path.normpath(directory)
+            self.rescan_directory()  # Use the new method to populate files
 
     def begin_processing(self):
         # If a processing thread is already running, treat this as a cancel.
@@ -561,6 +545,27 @@ class TranscriptProcessorGUI(QMainWindow):
         current_prompt = getattr(self.processor, f"{prompt_type}_prompt", "")
         dialog = PromptEditorDialog(self, prompt_type, current_prompt, self.save_prompt)
         dialog.show()
+
+    def rescan_directory(self):
+        if self.is_directory and self.selected_directory and os.path.isdir(self.selected_directory):
+            self.file_list.clear()
+            # Gather all .json files based on current checkbox state
+            files_to_add = []
+            if self.include_subdirs.isChecked():
+                for root, _, files in os.walk(self.selected_directory):
+                    for file in files:
+                        if file.endswith(".json") and not file.startswith("."):
+                            files_to_add.append(os.path.normpath(os.path.join(root, file)))
+            else:
+                for file in os.listdir(self.selected_directory):
+                    if file.endswith(".json") and not file.startswith("."):
+                        files_to_add.append(os.path.normpath(os.path.join(self.selected_directory, file)))
+
+            # Update the UI with new files
+            for file_path in files_to_add:
+                item = QListWidgetItem(os.path.basename(file_path))
+                self.file_list.addItem(item)
+            self.selected_paths = files_to_add
 
     def save_prompt(self, prompt_type, new_prompt):
         if prompt_type == "system":
