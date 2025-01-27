@@ -395,6 +395,7 @@ class TranscriptProcessorGUI(QMainWindow):
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setFont(QFont("Consolas", 10))
+        self.log_text.setFixedHeight(200)  # Height to show approximately 10 lines
         main_layout.addWidget(self.log_text)
 
     def load_providers(self):
@@ -492,7 +493,7 @@ class TranscriptProcessorGUI(QMainWindow):
 
         if total_count > 0:
             self.progress_bar.setValue(int((processed_count / total_count) * 100))
-        self.log_message(message, level, file_path)
+        self.log_message(message, level)
         if total_count > 0:
             self.status_label.setText(f"Processing: {processed_count} of {total_count}")
             self.latest_processed_count = processed_count
