@@ -348,7 +348,7 @@ Here is the original metadata and transcript for reference:
         if filename in processed_files:
             output_path = processed_files[filename]["output_path"]
             if os.path.exists(output_path):
-                self.notify(ProcessingStatus.FILE_SKIPPED, "File already processed. Skipping.")
+                self.notify(ProcessingStatus.FILE_SKIPPED, "File already processed. Skipping.", {"file_path": file})
                 return None
             else:
                 self.notify(

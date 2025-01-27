@@ -11,19 +11,16 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QTextEdit,
     QProgressBar,
-    QFrame,
-    QScrollArea,
     QGroupBox,
     QListWidget,
     QListWidgetItem,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
-from PyQt6.QtGui import QFont, QTextCursor, QColor, QTextCharFormat, QShortcut, QKeySequence, QIcon
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QTextCursor, QColor, QTextCharFormat, QShortcut, QKeySequence
 import qtawesome as qta
 import sys
 import os
 import json
-import threading
 import queue
 from datetime import datetime
 
@@ -37,23 +34,25 @@ from AiTranscriptProcessor import (
 
 
 class TranscriptProcessingThread(QThread):
-    progress_signal = pyqtSignal(str, str, str)  # Add file path to signal
+    progress_signal = pyqtSignal(
+        str, str, str, int, int
+    )  # Emitting (message, level, file_path, processed_count, total_count)
     finished_signal = pyqtSignal()
 
-    def __init__(self, processor, provider_key, selected_paths, is_directory, include_subdirs):
+    def __init__(self, processor, provider_key, file_paths):
         super().__init__()
         self.processor = processor
-        # Set up progress callback
         self.processor.progress_callback = self.handle_progress
         self.provider_key = provider_key
-        self.selected_paths = selected_paths
-        self.is_directory = is_directory
-        self.include_subdirs = include_subdirs
+        self.file_paths = file_paths
         self.cancelled = False
 
+    def emit_progress_signal(self, message, level, file_path, processed_count=0, total_count=0):
+        self.progress_signal.emit(message, level, file_path, processed_count, total_count)
+
     def handle_progress(self, message: str, status: ProcessingStatus, data: dict = None):
-        """Handle progress updates from the processor"""
-        # Map processor status to GUI levels
+        if data is None:
+            data = {}
         gui_level = {
             ProcessingStatus.ERROR_CONFIG: "error",
             ProcessingStatus.ERROR_PROVIDER: "error",
@@ -66,74 +65,48 @@ class TranscriptProcessingThread(QThread):
             ProcessingStatus.FILE_COMPLETE: "success",
             ProcessingStatus.FILE_SKIPPED: "warning",
         }.get(status, "info")
-
-        self.progress_signal.emit(message, gui_level, data.get("file_path", ""))
+        file_path = data.get("file_path", "")
+        self.progress_signal.emit(message, gui_level, file_path, 0, 0)
 
     def run(self):
         try:
             self.processor.set_provider(self.provider_key)
-            file_count = 0
+            file_count = len(self.file_paths)
             file_success_count = 0
 
-            if self.is_directory:
-                directory = self.selected_paths[0]
-
-                if self.include_subdirs:
-                    self.progress_signal.emit(
-                        f"\nProcessing directory: {directory.split(os.sep)[-1]} and all subdirectories",
-                        "info",
-                    )
-                    for root, _, files in os.walk(directory):
-                        for file in files:
-                            if self.cancelled:
-                                raise InterruptedError("Processing cancelled by user")
-                            if file.endswith(".json") and not file.startswith("."):
-                                file_count += 1
-                                try:
-                                    result = self.processor.process_file(os.path.join(root, file))
-                                    if result:
-                                        file_success_count += 1
-                                except ProcessingError as e:
-                                    self.progress_signal.emit(str(e), "error")
-                else:
-                    self.progress_signal.emit(f"\nProcessing directory: {directory.split(os.sep)[-1]}", "info")
-                    for filename in os.listdir(directory):
-                        if self.cancelled:
-                            raise InterruptedError("Processing cancelled by user")
-                        if filename.endswith(".json") and not filename.startswith("."):
-                            file_count += 1
-                            try:
-                                result = self.processor.process_file(os.path.join(directory, filename))
-                                if result:
-                                    file_success_count += 1
-                            except ProcessingError as e:
-                                self.progress_signal.emit(str(e), "error")
-            else:
-                for file in self.selected_paths:
-                    if self.cancelled:
-                        raise InterruptedError("Processing cancelled by user")
-                    file_count += 1
-                    try:
-                        result = self.processor.process_file(file)
-                        if result:
-                            file_success_count += 1
-                    except ProcessingError as e:
-                        self.progress_signal.emit(str(e), "error")
+            for file_path in self.file_paths:
+                if self.cancelled:
+                    raise InterruptedError("Processing cancelled by user")
+                try:
+                    result = self.processor.process_file(file_path)
+                    if result:
+                        file_success_count += 1
+                        self.progress_signal.emit(
+                            "File processed successfully", "success", file_path, file_success_count, file_count
+                        )
+                    else:
+                        self.emit_progress_signal(
+                            "File processing failed", "error", file_path, file_success_count, file_count
+                        )
+                except ProcessingError as e:
+                    self.progress_signal.emit(str(e), "error", file_path, 0, 0)
 
             level = "success" if file_success_count > 0 else "info"
-            self.progress_signal.emit(
+            self.emit_progress_signal(
                 f"\nProcessing complete. {file_success_count} of {file_count} files processed",
                 level,
+                "",
+                file_success_count,
+                file_count,
             )
-
         except InterruptedError as e:
-            self.progress_signal.emit(f"Interrupted error: \n{str(e)}", "error")
+            self.progress_signal.emit(str(e), "error", "")
         except ProviderError as e:
-            self.progress_signal.emit(f"Provider error: {str(e)}", "error")
+            self.progress_signal.emit(f"Provider error: {str(e)}", "error", "")
         except ConfigurationError as e:
-            self.progress_signal.emit(f"Configuration error: {str(e)}", "error")
+            self.progress_signal.emit(f"Configuration error: {str(e)}", "error", "")
         except Exception as e:
-            self.progress_signal.emit(f"Error during processing: {e}", "error", "")
+            self.progress_signal.emit(f"Error during processing: {e}", "error", "", 0, 0)
         finally:
             self.finished_signal.emit()
 
@@ -148,7 +121,6 @@ class PromptEditorDialog(QWidget):
         self.setWindowTitle(f"Edit {prompt_type.title()} Prompt")
         self.setup_ui(current_prompt)
 
-        # Set size and position
         self.resize(800, 600)
         parent_center = parent.geometry().center()
         self.move(parent_center.x() - 400, parent_center.y() - 300)
@@ -156,14 +128,12 @@ class PromptEditorDialog(QWidget):
     def setup_ui(self, current_prompt):
         layout = QVBoxLayout(self)
 
-        # Text editor
         self.editor = QTextEdit()
         self.editor.setFont(QFont("Consolas", 10))
         if current_prompt:
             self.editor.setText(current_prompt)
         layout.addWidget(self.editor)
 
-        # Add hotkeys
         save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
         save_shortcut.activated.connect(self.save)
         cancel_shortcut = QShortcut(QKeySequence("Escape"), self)
@@ -189,36 +159,26 @@ class PromptEditorDialog(QWidget):
 class TranscriptProcessorGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-
-        # Initialize variables
         self.selected_paths = []
         self.is_directory = False
-        self.include_subdirs_state = False  # Store checkbox state
+        self.include_subdirs_state = False
         self.processing_thread = None
         self.providers = {}
         self.provider_name_to_key = {}
         self.current_path = os.getcwd()
-        self.processing_queue = queue.Queue()  # Initialize processing queue
+        self.processing_queue = queue.Queue()
 
-        # Style configuration
         self.configure_styles()
-
-        # Setup UI
         self.padding_style = "font-size: 14px; padding: 10px 20px;"
         self.setup_ui()
-
-        # Initialize processor
         self.processor = AiTranscriptProcessor(progress_callback=self.log_message)
-
         self.load_providers()
 
-        # Window settings
         self.setWindowTitle("YouTube Transcript Processor")
         screen_height = QApplication.primaryScreen().size().height()
         self.resize(1024, int(screen_height * 2 / 3))
         self.setMinimumSize(800, 600)
 
-        # Progress timer
         self.progress_timer = QTimer()
         self.progress_timer.timeout.connect(self.update_progress)
         self.progress_timer.setInterval(100)
@@ -232,69 +192,82 @@ class TranscriptProcessorGUI(QMainWindow):
             "success": "#27AE60",
         }
 
-    def log_message(self, message, level="default", data=None):
+    def log_message(self, message, level="default", file_path=None):
         color = self.log_colors.get(level, self.log_colors["default"])
         timestamp = datetime.now().strftime("%H:%M:%S")
-        formatted_message = f"[{timestamp}] {message.strip()}\n"
+        text = f"[{timestamp}] {message.strip()}"
+        self.append_to_log(text, color)
 
+    def append_to_log(self, message, color):
         cursor = self.log_text.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.log_text.setTextCursor(cursor)
 
         char_format = QTextCharFormat()
         char_format.setForeground(QColor(color))
-        cursor.insertText(formatted_message, char_format)
-
+        cursor.insertText(message + "\n", char_format)
         self.log_text.ensureCursorVisible()
 
     def setup_ui(self):
-        # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(20, 20, 20, 20)
 
-        # Set window icon
-        self.setWindowIcon(QIcon("icon.jpg"))
-
-        # Title
         title_label = QLabel("YouTube Transcript Processor")
         title_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         title_label.setStyleSheet("color: #333; margin-bottom: 20px;")
         main_layout.addWidget(title_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # AI Provider section
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setStyleSheet(
+            """
+            QProgressBar {
+                border: 1px solid #5A5A5A;
+                border-radius: 10px;
+                text-align: center;
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                background-color: #27AE60;
+                border-radius: 10px;
+            }
+        """
+        )
+        self.progress_bar.setVisible(False)
+        main_layout.addWidget(self.progress_bar)
+
+        self.status_label = QLabel("Ready")
+        main_layout.addWidget(self.status_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
         provider_group = QGroupBox("AI Provider")
         provider_layout = QHBoxLayout()
-
         self.provider_combo = QComboBox()
         self.provider_combo.setStyleSheet(self.padding_style)
         self.set_default_btn = QPushButton("Set as Default")
         self.set_default_btn.clicked.connect(self.set_default_provider)
-
         provider_layout.addWidget(self.provider_combo)
         provider_layout.addWidget(self.set_default_btn)
         provider_group.setLayout(provider_layout)
         main_layout.addWidget(provider_group)
 
-        # Process buttons
+        # Buttons layout
         process_layout = QHBoxLayout()
         self.process_file_btn = QPushButton("Select File(s)")
         self.process_file_btn.clicked.connect(self.select_files)
         self.process_dir_btn = QPushButton("Select Directory")
         self.process_dir_btn.clicked.connect(self.select_directory)
-
         process_layout.addWidget(self.process_file_btn)
         process_layout.addWidget(self.process_dir_btn)
+        self.include_subdirs = QCheckBox("Include Subdirectories")
+        self.include_subdirs.setChecked(False)
+        process_layout.addWidget(self.include_subdirs)
 
-        # Edit prompt buttons
         edit_layout = QHBoxLayout()
         self.edit_system_btn = QPushButton("Edit System Prompt")
         self.edit_system_btn.clicked.connect(lambda: self.edit_prompt("system"))
         self.edit_user_btn = QPushButton("Edit User Prompt")
         self.edit_user_btn.clicked.connect(lambda: self.edit_prompt("user"))
-
         edit_layout.addStretch()
         edit_layout.addWidget(self.edit_system_btn)
         edit_layout.addWidget(self.edit_user_btn)
@@ -302,41 +275,37 @@ class TranscriptProcessorGUI(QMainWindow):
         process_layout.addLayout(edit_layout)
         main_layout.addLayout(process_layout)
 
-        # Update button styles
         self.process_file_btn.setStyleSheet(self.padding_style)
         self.process_dir_btn.setStyleSheet(self.padding_style)
         self.set_default_btn.setStyleSheet(self.padding_style)
         self.edit_system_btn.setStyleSheet(self.padding_style)
         self.edit_user_btn.setStyleSheet(self.padding_style)
 
-        # Selection display
-        self.selection_group = None
-
-        # File list section
+        # File list
         file_list_label = QLabel("Files to Process")
         file_list_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         main_layout.addWidget(file_list_label)
-
         self.file_list = QListWidget()
         self.file_list.setStyleSheet("font-size: 16px; padding: 10px;")
         main_layout.addWidget(self.file_list)
 
-        # Status section
-        status_label = QLabel("Status")
-        status_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        main_layout.addWidget(status_label)
+        # Begin button
+        begin_layout = QHBoxLayout()
+        self.begin_btn = QPushButton("Begin Processing")
+        self.begin_btn.setStyleSheet(self.padding_style)
+        self.begin_btn.clicked.connect(self.begin_processing)
+        begin_layout.addStretch()
+        begin_layout.addWidget(self.begin_btn)
+        main_layout.addLayout(begin_layout)
 
-        self.status_label = QLabel("Ready")
-        main_layout.addWidget(self.status_label)
-
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        main_layout.addWidget(self.progress_bar)
-
-        # Log text
+        # Log
+        log_label = QLabel("Status Log")
+        log_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        log_label.setStyleSheet("margin-top: 0px;")
+        main_layout.addWidget(log_label)
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
+        self.log_text.setFont(QFont("Consolas", 10))
         main_layout.addWidget(self.log_text)
 
     def load_providers(self):
@@ -351,7 +320,6 @@ class TranscriptProcessorGUI(QMainWindow):
                 self.provider_combo.addItems(provider_names)
                 if default_provider:
                     self.provider_combo.setCurrentText(default_provider)
-
         except Exception as e:
             self.log_message(f"Error loading providers: {e}", "error")
 
@@ -382,124 +350,87 @@ class TranscriptProcessorGUI(QMainWindow):
             "JSON files (*.json);;All files (*.*)",
         )
         if files:
-            self.selected_paths = files
             self.is_directory = False
-            self.update_selection_display()
+            self.file_list.clear()
+            self.selected_paths = []
+            for f in files:
+                self.selected_paths.append(os.path.normpath(f))
+                item = QListWidgetItem(os.path.basename(f))
+                self.file_list.addItem(item)
 
     def select_directory(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Directory to Process", self.current_path)
         if directory:
-            self.selected_paths = [directory]
             self.is_directory = True
-            self.update_selection_display()
+            self.file_list.clear()
+            directory = os.path.normpath(directory)
+            # Gather all .json files from this directory (and subdirectories if checked).
+            files_to_add = []
+            if self.include_subdirs.isChecked():
+                for root, _, files in os.walk(directory):
+                    for file in files:
+                        if file.endswith(".json") and not file.startswith("."):
+                            files_to_add.append(os.path.normpath(os.path.join(root, file)))
+            else:
+                for file in os.listdir(directory):
+                    if file.endswith(".json") and not file.startswith("."):
+                        files_to_add.append(os.path.normpath(os.path.join(directory, file)))
 
-    def update_selection_display(self):
-        if self.selection_group is not None:
-            if hasattr(self, "include_subdirs"):
-                self.include_subdirs_state = self.include_subdirs.isChecked()
-            self.selection_group.deleteLater()
-            self.selection_group = None
-
-        if not self.selected_paths:
-            return
-
-        self.selection_group = QGroupBox("Selection")
-        layout = QVBoxLayout()
-
-        # Clear the file list
-        self.file_list.clear()
-
-        if self.is_directory:
-            directory = self.selected_paths[0]
-            files = self.scan_directory(directory, self.include_subdirs_state)
-            for file in files:
-                item = QListWidgetItem(file)
-                item.setIcon(QIcon("path/to/initial/icon.png"))  # Set initial icon
+            # Display them in the GUI
+            for file_path in files_to_add:
+                item = QListWidgetItem(os.path.basename(file_path))
                 self.file_list.addItem(item)
-        else:
-            for path in self.selected_paths:
-                item = QListWidgetItem(os.path.basename(path))
-                item.setIcon(QIcon("path/to/initial/icon.png"))  # Set initial icon
-                self.file_list.addItem(item)
-
-        # Begin button
-        begin_layout = QHBoxLayout()
-        self.begin_btn = QPushButton("Begin Processing")
-        self.begin_btn.setStyleSheet(self.padding_style)
-        self.begin_btn.clicked.connect(self.begin_processing)
-        self.update_begin_button_state()
-
-        begin_layout.addStretch()
-        begin_layout.addWidget(self.begin_btn)
-        layout.addLayout(begin_layout)
-
-        self.selection_group.setLayout(layout)
-
-        # Add to main layout after process buttons
-        self.centralWidget().layout().insertWidget(3, self.selection_group)
-
-    def scan_directory(self, directory, include_subdirs):
-        files = []
-        if include_subdirs:
-            for root, _, filenames in os.walk(directory):
-                for filename in filenames:
-                    if filename.endswith(".json") and not filename.startswith("."):
-                        files.append(os.path.join(root, filename))
-        else:
-            for filename in os.listdir(directory):
-                if filename.endswith(".json") and not filename.startswith("."):
-                    files.append(os.path.join(directory, filename))
-        return files
+            # Here, we store these file paths directly, so the QThread can process them
+            self.selected_paths = files_to_add
 
     def begin_processing(self):
-        if hasattr(self, "processing_thread") and self.processing_thread is not None:
-            # Cancel mode
+        # If a processing thread is already running, treat this as a cancel.
+        if self.processing_thread is not None and self.processing_thread.isRunning():
             self.processing_thread.cancelled = True
-            self.log_message(
-                "Cancelling... Please wait for current operation to complete.",
-                "warning",
-            )
+            self.log_message("Cancelling... Please wait.", "warning")
             self.begin_btn.setEnabled(False)
             return
 
+        # Make sure we have file paths selected.
         if not self.selected_paths:
+            self.log_message("No files selected.", "warning")
             return
 
-        if not self.provider_combo.currentText():
+        # Make sure an AI provider is selected
+        provider_name = self.provider_combo.currentText()
+        if not provider_name:
             self.log_message("Please select an AI provider first", "warning")
             return
 
-        provider_name = self.provider_combo.currentText()
         provider_key = self.provider_name_to_key.get(provider_name)
 
-        include_subdirs = self.include_subdirs.isChecked() if hasattr(self, "include_subdirs") else False
-
-        # Start processing thread
-        self.processing_thread = TranscriptProcessingThread(
-            self.processor,
-            provider_key,
-            self.selected_paths,
-            self.is_directory,
-            include_subdirs,
-        )
+        # Start background thread
+        self.processing_thread = TranscriptProcessingThread(self.processor, provider_key, self.selected_paths)
         self.processing_thread.progress_signal.connect(self.update_file_status)
         self.processing_thread.finished_signal.connect(self.stop_processing)
         self.processing_thread.start()
 
-        # Start progress updates
         self.start_processing()
-        self.progress_timer.start()
 
-    def update_file_status(self, message, level, file_path):
+    def update_file_status(self, message, level, file_path, processed_count, total_count):
+        if total_count > 0:
+            self.progress_bar.setValue(int((processed_count / total_count) * 100))
+        self.log_message(message, level, file_path)
+
+        base_name = os.path.basename(file_path)
         for index in range(self.file_list.count()):
             item = self.file_list.item(index)
-            if item.text() == os.path.basename(file_path):
+            if item.text() == base_name:
                 if level == "success":
-                    item.setText(f"\u2714 {item.text()}")  # Checkmark
+                    item.setIcon(qta.icon("fa.check", color="green"))
                 elif level == "error":
-                    item.setText(f" {item.text()}")  # Cross
+                    item.setIcon(qta.icon("fa.times", color="red"))
+                elif level == "warning":
+                    item.setIcon(qta.icon("fa.square", color="gray"))
+                elif level == "error":
+                    item.setIcon(qta.icon("fa.times", color="red"))
                 elif level == "info":
-                    item.setText(f" {item.text()}")  # Info
+                    item.setIcon(qta.icon("fa.spinner", color="blue"))
                 break
 
     def start_processing(self):
@@ -509,53 +440,41 @@ class TranscriptProcessorGUI(QMainWindow):
         self.begin_btn.setText("Cancel Processing")
         self.begin_btn.clicked.disconnect()
         self.begin_btn.clicked.connect(self.begin_processing)
-
-        if hasattr(self, "include_subdirs"):
-            self.include_subdirs.setEnabled(False)
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setVisible(True)
         self.progress_timer.start()
 
     def stop_processing(self):
-        self.progress_bar.setRange(0, 100)  # Reset to determinate mode
+        self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.process_file_btn.setEnabled(True)
         self.process_dir_btn.setEnabled(True)
         self.begin_btn.setText("Begin Processing")
         self.begin_btn.clicked.disconnect()
         self.begin_btn.clicked.connect(self.begin_processing)
-
-        if hasattr(self, "include_subdirs"):
-            self.include_subdirs.setEnabled(True)
         self.status_label.setText("Ready")
         self.processing_thread = None
         self.progress_timer.stop()
-
-    def update_begin_button_state(self):
-        prompts_valid = self.processor.system_prompt and self.processor.user_prompt
-        if hasattr(self, "begin_btn"):
-            self.begin_btn.setEnabled(bool(prompts_valid))
+        self.begin_btn.setEnabled(True)
 
     def update_progress(self):
-        try:
-            while True:
-                # Check for messages without blocking
-                try:
-                    level, message = self.processing_queue.get_nowait()
-                    if level == "done":
-                        self.stop_processing()
-                        return
-                    self.log_message(message, level)
-                except queue.Empty:
-                    break
+        # Animate progress bar in indeterminate mode
+        value = self.progress_bar.value()
+        value = (value + 5) % 100
+        self.progress_bar.setValue(value)
 
-            # Update progress bar animation
-            self.progress_bar.setValue(self.progress_bar.value() + 5)
+    def edit_prompt(self, prompt_type):
+        current_prompt = getattr(self.processor, f"{prompt_type}_prompt", "")
+        dialog = PromptEditorDialog(self, prompt_type, current_prompt, self.save_prompt)
+        dialog.show()
 
-            # Schedule next update
-            self.progress_timer.start(100)
+    def save_prompt(self, prompt_type, new_prompt):
+        if prompt_type == "system":
+            self.processor.system_prompt = new_prompt
+        elif prompt_type == "user":
+            self.processor.user_prompt = new_prompt
 
-        except Exception as e:
-            self.log_message(f"Error updating progress: {e}", "error")
-            self.stop_processing()
+        self.log_message(f"Updated {prompt_type} prompt.", "success")
 
 
 if __name__ == "__main__":
