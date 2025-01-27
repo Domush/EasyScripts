@@ -212,7 +212,7 @@ Here is the original metadata and transcript for reference:
                     )
                     return None
                 print(
-                    f"Error processing AI response, retrying... (attempt {attempt + 1}/{MAX_RETRIES})",
+                    f"Error processing AI response, retrying...",
                     type="warning",
                 )
                 await asyncio.sleep(1)
