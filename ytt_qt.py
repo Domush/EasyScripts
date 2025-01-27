@@ -15,8 +15,8 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QTextCursor, QColor, QTextCharFormat, QShortcut, QKeySequence
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
+from PyQt6.QtGui import QFont, QTextCursor, QColor, QTextCharFormat, QShortcut, QKeySequence, QPixmap, QIcon
 import qtawesome as qta
 import sys
 import os
@@ -77,12 +77,21 @@ class TranscriptProcessingThread(QThread):
             processed_count = 0
 
             processed_count = 0
+            file_count = len(self.file_paths)
             for file_path in self.file_paths:
                 if self.cancelled:
                     raise InterruptedError("Processing cancelled by user")
-                processed_count += 1
                 try:
                     result = self.processor.process_file(file_path)
+                    processed_count += 1
+                    signal_data = {
+                        "message": "File processed",
+                        "level": "success" if result else "info",
+                        "file_path": file_path,
+                        "processed_count": processed_count,
+                        "total_count": file_count,
+                    }
+                    self.progress_signal.emit(signal_data)
                     if result:
                         signal_data = {
                             "message": "File processed successfully",
@@ -94,12 +103,13 @@ class TranscriptProcessingThread(QThread):
                         self.progress_signal.emit(signal_data)
                     # Skip emitting duplicate message for skipped files since it comes from the processor
                 except ProcessingError as e:
+                    processed_count += 1
                     signal_data = {
                         "message": str(e),
                         "level": "error",
                         "file_path": file_path,
-                        "processed_count": 0,
-                        "total_count": 0,
+                        "processed_count": processed_count,
+                        "total_count": file_count,
                     }
                     self.progress_signal.emit(signal_data)
 
@@ -358,7 +368,19 @@ class TranscriptProcessorGUI(QMainWindow):
         file_list_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         main_layout.addWidget(file_list_label)
         self.file_list = QListWidget()
-        self.file_list.setStyleSheet("font-size: 16px; padding: 10px;")
+        self.file_list.setStyleSheet(
+            """
+            QListWidget {
+                font-size: 16px;
+                padding: 10px;
+            }
+            QListWidget::item {
+                text-indent: 30px;
+                padding: 4px;
+            }
+        """
+        )
+        self.file_list.setIconSize(QSize(24, 24))
         main_layout.addWidget(self.file_list)
 
         # Log
@@ -517,6 +539,7 @@ class TranscriptProcessorGUI(QMainWindow):
         self.begin_btn.setText("Cancel Processing")
         self.begin_btn.clicked.disconnect()
         self.begin_btn.clicked.connect(self.begin_processing)
+        self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
 
     def stop_processing(self):
@@ -527,8 +550,11 @@ class TranscriptProcessorGUI(QMainWindow):
         self.begin_btn.clicked.connect(self.begin_processing)
         if self.processing_thread and self.processing_thread.cancelled:
             self.status_label.setText(f"Cancelled after {self.latest_processed_count} files")
+            self.progress_bar.setValue(0)
         else:
             self.status_label.setText("Processing Complete")
+            self.progress_bar.setValue(100)
+        self.progress_bar.setVisible(False)
         self.processing_thread = None
 
     def edit_prompt(self, prompt_type):
