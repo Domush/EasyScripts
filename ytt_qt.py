@@ -170,6 +170,17 @@ class PromptEditorDialog(QWidget):
 
         self.editor = QTextEdit()
         self.editor.setFont(QFont("Consolas", 10))
+        self.editor.setStyleSheet(
+            """
+            QTextEdit {
+                padding: 12px;
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+            }
+        """
+        )
         if current_prompt:
             self.editor.setText(current_prompt)
         layout.addWidget(self.editor)
@@ -182,8 +193,11 @@ class PromptEditorDialog(QWidget):
         button_layout = QHBoxLayout()
         save_btn = QPushButton("Save Changes (Ctrl+S)")
         save_btn.clicked.connect(self.save)
+        save_btn.setStyleSheet("padding: 8px 16px;")
+
         cancel_btn = QPushButton("Cancel (Esc)")
         cancel_btn.clicked.connect(self.close)
+        cancel_btn.setStyleSheet("padding: 8px 16px;")
 
         button_layout.addStretch()
         button_layout.addWidget(cancel_btn)
@@ -459,21 +473,25 @@ class TranscriptProcessorGUI(QMainWindow):
             self.progress_bar.setValue(int((processed_count / total_count) * 100))
         self.log_message(message, level, file_path)
 
-        base_name = os.path.basename(file_path)
-        for index in range(self.file_list.count()):
-            item = self.file_list.item(index)
-            if item.text() == base_name:
-                if level == "success":
-                    item.setIcon(qta.icon("fa.check", color="green"))
-                elif "already processed" in message:
-                    item.setIcon(qta.icon("fa.square", color="gray"))
-                elif level == "error" or message == "File processing failed":
-                    item.setIcon(qta.icon("fa.times", color="red"))
-                elif level == "warning":
-                    item.setIcon(qta.icon("fa.exclamation", color="orange"))
-                elif level == "info":
-                    item.setIcon(qta.icon("fa.spinner", color="blue"))
-                break
+        if file_path:  # Only scroll for actual file updates
+            base_name = os.path.basename(file_path)
+            for index in range(self.file_list.count()):
+                item = self.file_list.item(index)
+                if item.text() == base_name:
+                    if level == "success":
+                        item.setIcon(qta.icon("fa.check", color="green"))
+                    elif "already processed" in message:
+                        item.setIcon(qta.icon("fa.square", color="gray"))
+                    elif level == "error" or message == "File processing failed":
+                        item.setIcon(qta.icon("fa.times", color="red"))
+                    elif level == "warning":
+                        item.setIcon(qta.icon("fa.exclamation", color="orange"))
+                    elif level == "info":
+                        item.setIcon(qta.icon("fa.spinner", color="blue"))
+
+                    # Scroll to make the current item visible
+                    self.file_list.scrollToItem(item)
+                    break
 
     def start_processing(self):
         self.status_label.setText("Processing... Please wait")
