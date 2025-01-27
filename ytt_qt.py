@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
-from PyQt6.QtGui import QFont, QTextCursor, QColor, QTextCharFormat, QShortcut, QKeySequence
+from PyQt6.QtGui import QFont, QTextCursor, QColor, QTextCharFormat, QShortcut, QKeySequence, QIcon
 import sys
 import os
 import json
@@ -168,6 +168,7 @@ class TranscriptProcessorGUI(QMainWindow):
         self.setup_output_redirection()
 
         # Setup UI
+        self.padding_style = "font-size: 14px; padding: 10px 20px;"
         self.setup_ui()
 
         # Initialize processor
@@ -192,9 +193,13 @@ class TranscriptProcessorGUI(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(20, 20, 20, 20)
 
+        # Set window icon
+        self.setWindowIcon(QIcon("icon.jpg"))
+
         # Title
         title_label = QLabel("YouTube Transcript Processor")
-        title_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        title_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        title_label.setStyleSheet("color: #333; margin-bottom: 20px;")
         main_layout.addWidget(title_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # AI Provider section
@@ -202,6 +207,7 @@ class TranscriptProcessorGUI(QMainWindow):
         provider_layout = QHBoxLayout()
 
         self.provider_combo = QComboBox()
+        self.provider_combo.setStyleSheet(self.padding_style)
         self.set_default_btn = QPushButton("Set as Default")
         self.set_default_btn.clicked.connect(self.set_default_provider)
 
@@ -233,6 +239,13 @@ class TranscriptProcessorGUI(QMainWindow):
 
         process_layout.addLayout(edit_layout)
         main_layout.addLayout(process_layout)
+
+        # Update button styles
+        self.process_file_btn.setStyleSheet(self.padding_style)
+        self.process_dir_btn.setStyleSheet(self.padding_style)
+        self.set_default_btn.setStyleSheet(self.padding_style)
+        self.edit_system_btn.setStyleSheet(self.padding_style)
+        self.edit_user_btn.setStyleSheet(self.padding_style)
 
         # Selection display
         self.selection_group = None
@@ -352,6 +365,7 @@ class TranscriptProcessorGUI(QMainWindow):
         # Begin button
         begin_layout = QHBoxLayout()
         self.begin_btn = QPushButton("Begin Processing")
+        self.begin_btn.setStyleSheet(self.padding_style)
         self.begin_btn.clicked.connect(self.begin_processing)
         self.update_begin_button_state()
 
